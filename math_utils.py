@@ -9,8 +9,9 @@ def pack_homogeneous_transfer_matrix(translate: list[float], rotation: list[floa
          numpy.array([0, 0, 0, 1]))).tolist()
 
 
-def unpack_homogeneous_transfer_matrix(homogeneous_transfer_matrix: list[list[float]]) -> (
-        list[float], list[list[float]]):
+def unpack_homogeneous_transfer_matrix(
+    homogeneous_transfer_matrix: list[list[float]],
+) -> tuple[list[float], list[list[float]]]:
     return (numpy.array(homogeneous_transfer_matrix)[:3, 3].tolist(),
             numpy.array(homogeneous_transfer_matrix)[:3, :3].tolist())
 
