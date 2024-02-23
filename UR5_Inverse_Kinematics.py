@@ -38,12 +38,7 @@ class UR5_Inverse_Kinematics_Simulation:
     @property
     def available_joints_indices(self) -> list[int]:
         # [2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16]
-        return [
-            i
-            for i in range(self.all_joints_num)
-            if pybullet.getJointInfo(bodyUniqueId=self.robot_id, jointIndex=i)[2]
-               != pybullet.JOINT_FIXED
-        ]
+        return [index for index in range(self.all_joints_num) if self.get_joint_type(index) != pybullet.JOINT_FIXED]
 
     @property
     def available_joint_names(self) -> list[str]:
@@ -51,12 +46,7 @@ class UR5_Inverse_Kinematics_Simulation:
         #  'left_wrist_1_joint', 'left_wrist_2_joint', 'left_wrist_3_joint',
         #  'right_shoulder_pan_joint', 'right_shoulder_lift_joint', 'right_elbow_joint',
         #  'right_wrist_1_joint', 'right_wrist_2_joint', 'right_wrist_3_joint']
-        return [
-            str(
-                pybullet.getJointInfo(bodyUniqueId=self.robot_id, jointIndex=_joint)[1]
-            )[2:-1]
-            for _joint in self.available_joints_indices
-        ]
+        return [self.get_joint_name(_joint) for _joint in self.available_joints_indices]
 
     @property
     def arm_base_position(self) -> (list[float], list[float]):
@@ -65,6 +55,12 @@ class UR5_Inverse_Kinematics_Simulation:
     @property
     def ee_orientation_quaternion(self) -> list[list[float]]:
         return [self.get_link_orientation_quaternion(ee) for ee in self.end_effector_joint_index]
+
+    def get_joint_name(self, joint_index: int) -> str:
+        return str(pybullet.getJointInfo(bodyUniqueId=self.robot_id, jointIndex=joint_index)[1])[2:-1]
+
+    def get_joint_type(self, joint_index: int) -> int:
+        return pybullet.getJointInfo(self.robot_id, joint_index)[2]
 
     def get_joint_angle(self, joint_index: int) -> float:
         return pybullet.getJointState(self.robot_id, joint_index)[0]
@@ -134,30 +130,30 @@ class UR5_Inverse_Kinematics_Simulation:
             return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
 
         # Wrist inverse kinematics
-        wrist_now_ori = [get_numpy_matrix_from_quaternion(self.get_link_orientation_quaternion(i)) for i in [4, 13]]
-        wrist_target_ori = [get_numpy_matrix_from_quaternion(target_orientations[i]) for i in [0, 1]]
-        wrist_action_ori = [wrist_target_ori[i] @ wrist_now_ori[i].transpose() for i in [0, 1]]
-        ang = [Rotation.from_matrix(wrist_action_ori[i]).as_euler(seq='yxy', degrees=False) for i in [0, 1]]
+        wrist_now_ori = [get_numpy_matrix_from_quaternion(self.get_link_orientation_quaternion(_i)) for _i in [4, 13]]
+        wrist_target_ori = [get_numpy_matrix_from_quaternion(target_orientations[_i]) for _i in [0, 1]]
+        wrist_action_ori = [wrist_target_ori[_i] @ wrist_now_ori[_i].transpose() for _i in [0, 1]]
+        ang = [Rotation.from_matrix(wrist_action_ori[_i]).as_euler(seq='yxy', degrees=False) for _i in [0, 1]]
         _angles[3:6] = [-ang for ang in ang[0]]
         _angles[9:12] = [+ang for ang in ang[1]]
 
         now_ang = [self.get_joint_angle(index) for index in self.available_joints_indices]
-        _angles = [unwind_angles(now_ang[i], _angles[i]) for i in range(len(_angles))]
+        _angles = [unwind_angles(now_ang[_i], _angles[_i]) for _i in range(len(_angles))]
 
         return _angles
 
 
-def get_real_target(arm_base_position: tuple, target: list[list[float]]) -> list[list[float]]:
-    disp_human_demonstrate(target, [0, -0.6, 1.5 + global_z_offset])
+def get_real_target(arm_base_position: tuple, _target: list[list[float]]) -> list[list[float]]:
+    disp_human_demonstrate(_target, [0, -0.6, 1.5 + global_z_offset])
 
     def cvt_target(
-            target: list[list[float]], left_base_pos: list[float], right_base_pos: list[float], man_scale=2.5
+            _target: list[list[float]], left_base_pos: list[float], right_base_pos: list[float], man_scale=2.5
     ) -> list[list[float]]:
         scale = [man_scale, man_scale]
-        return (point_transfer_scale(target[:3], target[0], left_base_pos, scale=scale[0]) +
-                point_transfer_scale(target[3:], target[3], right_base_pos, scale=scale[1]))
+        return (point_transfer_scale(_target[:3], _target[0], left_base_pos, scale=scale[0]) +
+                point_transfer_scale(_target[3:], _target[3], right_base_pos, scale=scale[1]))
 
-    target_points = cvt_target(target, *arm_base_position)
+    target_points = cvt_target(_target, *arm_base_position)
     pybullet.addUserDebugPoints(
         pointPositions=target_points,
         pointColorsRGB=[[1, 0, 0] for _ in range(len(target_points))],
@@ -170,12 +166,12 @@ def get_real_target(arm_base_position: tuple, target: list[list[float]]) -> list
 def calculate_orientation_error(target_orientation_quaternion: list[list[float]],
                                 now_orientation_quaternion: list[list[float]]) -> float:
 
-    def vector_dot_loss(a, b):
+    def dot_loss(a, b):
         dot = (numpy.matrix(numpy.array(a)) @ numpy.matrix(numpy.array(b)).I).tolist()[0][0]
         norm = numpy.linalg.norm(numpy.array(a)) * numpy.linalg.norm(numpy.array(b))
         return 1 - dot / norm
 
-    error = [vector_dot_loss(target, now) for target, now in zip(target_orientation_quaternion, now_orientation_quaternion)]
+    error = [dot_loss(_target, now) for _target, now in zip(target_orientation_quaternion, now_orientation_quaternion)]
     return error[0] + error[1]
 
 
@@ -190,6 +186,7 @@ if __name__ == "__main__":
                 target_positions=target, target_orientations=demonstrate_file["ee_ori"][i].tolist(),
             )
             simulation.step_simulation(angles)
-            print(calculate_orientation_error(demonstrate_file["ee_ori"][i].tolist(), simulation.ee_orientation_quaternion))
+            print(calculate_orientation_error(demonstrate_file["ee_ori"][i].tolist(),
+                                              simulation.ee_orientation_quaternion))
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)
