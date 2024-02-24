@@ -2,7 +2,7 @@ import pybullet
 import numpy
 from scipy.spatial.transform import Rotation
 
-global_lifeTime = 0.1
+global_lifeTime = 0.08
 
 
 def disp_human_demonstrate(target: list[list[float]], draw_bias: list[float]) -> None:
