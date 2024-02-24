@@ -11,10 +11,14 @@ global_z_offset = 1.0
 
 
 class UR5_Inverse_Kinematics_Simulation:
-    def __init__(self, urdf_file: str):
+    def __init__(self, urdf_file: str, show_gui=False):
         # Connect the client
         self.client = pybullet.connect(pybullet.GUI)
-        pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
+        if show_gui:
+            pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 1)
+        else:
+            pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
+        pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_SHADOWS, 0)
         # Add source path
         import pybullet_data
 
