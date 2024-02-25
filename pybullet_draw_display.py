@@ -5,6 +5,11 @@ from scipy.spatial.transform import Rotation
 global_lifeTime = 0.08
 
 
+def set_display_lifetime(lifetime: float) -> None:
+    global global_lifeTime
+    global_lifeTime = lifetime
+
+
 def disp_human_demonstrate(target: list[list[float]], draw_bias: list[float]) -> None:
     target = (numpy.array(target) + numpy.array(draw_bias)).tolist()
     color = [1, 0, 1]

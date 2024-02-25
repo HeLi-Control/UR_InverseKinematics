@@ -1,14 +1,12 @@
-from tqdm import trange
+import math
+
 import numpy
 import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
 
-import matplotlib.pyplot as plt
-import time
-
 from math_utils import unwind_angles, point_transfer_scale, vector_dot_loss
-from pybullet_draw_display import disp_human_demonstrate
+from pybullet_draw_display import set_display_lifetime, disp_human_demonstrate
 
 
 global_z_offset = 1.0
@@ -70,7 +68,7 @@ class UR5_Inverse_Kinematics_Simulation:
     @property
     def ee_orientation_quaternion(self) -> list[list[float]]:
         return [
-            self.get_link_orientation_quaternion(ee)
+            list(self.get_link_orientation_quaternion(ee))
             for ee in self.end_effector_joint_index
         ]
 
@@ -103,6 +101,7 @@ class UR5_Inverse_Kinematics_Simulation:
                 controlMode=pybullet.POSITION_CONTROL,
                 targetPositions=joint_angles,
             )
+        pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING)
         pybullet.stepSimulation(self.client)
 
     def __calculate_inverse_kinematics_without_orientation(
@@ -224,38 +223,62 @@ def calculate_orientation_error(
             target_orientation_quaternion, now_orientation_quaternion
         )
     ]
-    return error[0] + error[1]
+    return numpy.linalg.norm(numpy.array(error)) / math.sqrt(2) / 2
+
+
+def test_draw_end_effector_coordinate(simulation, target_orientations) -> None:
+    for index in range(2):
+        draw_coordinate(
+            simulation.get_link_position_xyz(simulation.end_effector_joint_index[index]),
+            target_orientations
+        )
+        draw_coordinate(
+            simulation.get_link_position_xyz(simulation.end_effector_joint_index[index]),
+            simulation.get_link_orientation_quaternion(simulation.end_effector_joint_index[index])
+        )
 
 
 if __name__ == "__main__":
+    from tqdm import trange
+    import matplotlib.pyplot as plt
+    from pybullet_draw_display import draw_coordinate
+
     demonstrate_file = h5py.File(name="./humanDemonstrate.h5", mode="r")
     simulation = UR5_Inverse_Kinematics_Simulation(
         "./ur_description/ur5_robot_hand.urdf"
     )
+    set_display_lifetime(0.01)
     try:
         ori_err = []
         for i in trange(len(list(demonstrate_file["l_arm"]))):
-            target = (
-                demonstrate_file["l_arm"][i].tolist()
-                + demonstrate_file["r_arm"][i].tolist()
-            )
-            target = get_real_target(simulation.arm_base_position, target)
-            angles = simulation.calc_inverse_kinematics(
-                target_positions=target,
-                target_orientations=demonstrate_file["ee_ori"][i].tolist(),
-            )
-            simulation.step_simulation(angles)
+            for _ in range(3):
+                target = (
+                    demonstrate_file["l_arm"][i].tolist()
+                    + demonstrate_file["r_arm"][i].tolist()
+                )
+                target = get_real_target(simulation.arm_base_position, target)
+                angles = simulation.calc_inverse_kinematics(
+                    target_positions=target,
+                    target_orientations=demonstrate_file["ee_ori"][i].tolist(),
+                )
+                simulation.step_simulation(angles)
+                # Draw expected and now real orientation
+                test_draw_end_effector_coordinate(simulation, demonstrate_file["ee_ori"][i].tolist())
+
             ori_err.append(
                 calculate_orientation_error(
                     demonstrate_file["ee_ori"][i].tolist(),
                     simulation.ee_orientation_quaternion,
                 )
             )
-            time.sleep(sleep_time_per_frame)
+            plt.clf()
+            plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
+            plt.ylabel("orientation error")
+            plt.pause(sleep_time_per_frame)
+            plt.ioff()
+        plt.savefig('./orientation_error.png')
         pybullet.disconnect(simulation.client)
-        plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
-        plt.ylabel("orientation error")
-        plt.show()
+        print(min(ori_err))
 
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)
