@@ -34,12 +34,12 @@ def unpack_homogeneous_transfer_matrix(
     )
 
 
-def unwind_angles(now_angle: float, target_angle: float, period=math.pi * 2) -> float:
+def unwind_angles(now_angle: float, target_angle: float, period=math.pi * 2, step_size=math.pi) -> float:
     period = math.fabs(period)
     while target_angle - now_angle > period / 2:
-        target_angle = target_angle - period
+        target_angle = target_angle - step_size
     while target_angle - now_angle < -period / 2:
-        target_angle = target_angle + period
+        target_angle = target_angle + step_size
     return target_angle
 
 
