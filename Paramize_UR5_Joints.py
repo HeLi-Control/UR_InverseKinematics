@@ -4,7 +4,7 @@ import pybullet
 from UR5_Inverse_Kinematics import UR5_Inverse_Kinematics_Simulation
 from pybullet_draw_display import set_display_lifetime, draw_coordinate
 
-disp_given_target_orientation = False
+disp_given_target_orientation = True
 given_target_orientation = [[0, 0, 0, 1], [0, 0, 0, 1]]
 
 
@@ -12,8 +12,20 @@ if __name__ == "__main__":
     simulation = UR5_Inverse_Kinematics_Simulation(
         urdf_file="./ur_description/ur5_robot_hand.urdf", show_gui=True
     )
-    start_angle = [0.0, 0.0, 0.0, -2.186088266204923, 1.0469676627563713, -0.6158551755776115,
-                   0.0, 0.0, 0.0, 2.186838581440922, 2.0937051407187877, -0.6143539750849345]
+    start_angle = [
+        0.0,
+        0.0,
+        0.0,
+        -2.186088266204923,
+        1.0469676627563713,
+        -0.6158551755776115,
+        0.0,
+        0.0,
+        0.0,
+        2.186838581440922,
+        2.0937051407187877,
+        -0.6143539750849345,
+    ]
     joint_parameters = [
         [
             pybullet.addUserDebugParameter(
@@ -30,7 +42,10 @@ if __name__ == "__main__":
             ),
             joint,
         ]
-        for joint, index in zip(simulation.available_joints_indices, [i for i in range(len(simulation.available_joints_indices))])
+        for joint, index in zip(
+            simulation.available_joints_indices,
+            [i for i in range(len(simulation.available_joints_indices))],
+        )
     ]
     button_initial_value = [1.0 for _ in simulation.available_joints_indices]
     show_coordinate_flag = [False for _ in simulation.available_joints_indices]
@@ -39,12 +54,14 @@ if __name__ == "__main__":
         while True:
             if disp_given_target_orientation:
                 target_angle = [
-                        pybullet.readUserDebugParameter(param_id[1])
-                        for param_id in joint_parameters
-                    ]
-                ang = simulation.end_effector_inverse_kinematics_last3dof(given_target_orientation)
-                target_angle[3:6] = [angle for angle in ang[0]]
-                target_angle[9:12] = [angle for angle in ang[1]]
+                    pybullet.readUserDebugParameter(param_id[1])
+                    for param_id in joint_parameters
+                ]
+                ang = simulation.end_effector_inverse_kinematics_last3dof(
+                    given_target_orientation, [[1.0]], random_select=True
+                )
+                target_angle[3:6] = ang[0]
+                target_angle[9:12] = ang[1]
                 simulation.step_simulation(target_angle)
                 simulation.draw_end_effector_coordinate(given_target_orientation)
             else:

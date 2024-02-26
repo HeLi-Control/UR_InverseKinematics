@@ -4,8 +4,32 @@ import pybullet
 from UR5_Inverse_Kinematics import UR5_Inverse_Kinematics_Simulation
 from pybullet_draw_display import set_display_lifetime, draw_coordinate
 
-disp_given_target_orientation = False
-given_target_orientation = [[0, 0, 0, 1], [0, 0, 0, 1]]
+from scipy.spatial.transform import Rotation
+import numpy
+from math_utils import unwind_angles
+
+
+check_left = True
+
+
+def get_yzy_euler_angles_from_rotation_matrix(target_rotation_matrix: numpy.matrix) -> list[float]:
+    ret_angles = Rotation.from_matrix(target_rotation_matrix).as_euler(seq="yzy", degrees=False) * -1
+    # euler_angle = [[unwind_angles(0, ang) for ang in ret_angles.tolist()]] * 3
+    euler_angle = [[unwind_angles(0, ang) for ang in ret_angles.tolist()] for _ in range(3)]
+
+    euler_angle[1][0] = euler_angle[1][0] - math.pi
+    euler_angle[1][1] = -euler_angle[1][1]
+    euler_angle[1][2] = euler_angle[1][2] - math.pi
+    euler_angle[1] = [unwind_angles(0, ang) for ang in euler_angle[1]]
+
+    euler_angle[2][0] = math.pi - euler_angle[2][0]
+    euler_angle[2][2] = math.pi - euler_angle[2][2]
+    euler_angle[2] = [unwind_angles(0, ang) for ang in euler_angle[2]]
+
+    max_angle = [max(numpy.abs(numpy.array(angle)).tolist()) for angle in euler_angle]
+    print(euler_angle[0])
+    return euler_angle[max_angle.index(min(max_angle))]
+
 
 if __name__ == "__main__":
     simulation = UR5_Inverse_Kinematics_Simulation(
@@ -36,39 +60,25 @@ if __name__ == "__main__":
     show_coordinate_flag = [False for _ in simulation.available_joints_indices]
     set_display_lifetime(0.01)
     try:
-        from scipy.spatial.transform import Rotation
-        import numpy
-        from math_utils import unwind_angles
-
         while True:
-            if disp_given_target_orientation:
-                target_angle = [
-                    pybullet.readUserDebugParameter(param_id[1])
-                    for param_id in joint_parameters
-                ]
-                ang = simulation.end_effector_inverse_kinematics_last3dof(given_target_orientation)
-                target_angle[3:6] = [angle for angle in ang[0]]
-                target_angle[9:12] = [angle for angle in ang[1]]
-                simulation.step_simulation(target_angle)
-                simulation.draw_end_effector_coordinate(given_target_orientation)
-            else:
-                simulation.step_simulation(
-                    [
-                        pybullet.readUserDebugParameter(param_id[1])
-                        for param_id in joint_parameters
-                    ]
-                )
+            if check_left:
+                # Left Arm
+                print('<' * 50 + 'Left' + '>' * 50)
+                # Wrist base coordinate
                 base = Rotation.from_quat(simulation.get_link_orientation_quaternion(4)).as_matrix()
                 transform_base_4_5 = numpy.matrix(
                     numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
                 )
+                # Calculate ee orientation from euler angle
                 ee_ori = numpy.matrix(base) @ transform_base_4_5 @ numpy.matrix(
                     Rotation.from_euler(seq="yzy", degrees=False, angles=[-simulation.get_joint_angle_rad(i) for i in
                                                                           [5, 6, 7]]).as_matrix().transpose())
                 draw_coordinate(origin_position=[0, -2, 2],
                                 orientation_quaternion=Rotation.from_matrix(ee_ori).as_quat(canonical=True).tolist())
+                # Get ee orientation directly
                 draw_coordinate(origin_position=[0, 1, 2],
                                 orientation_quaternion=simulation.get_link_orientation_quaternion(7))
+                # Calculate ee orientation from rotation matrix
                 angle5 = simulation.get_joint_angle_rad(5)
                 angle6 = simulation.get_joint_angle_rad(6)
                 angle7 = simulation.get_joint_angle_rad(7)
@@ -81,22 +91,46 @@ if __name__ == "__main__":
                 ))
                 draw_coordinate(origin_position=[0, -1, 2],
                                 orientation_quaternion=Rotation.from_matrix(ee_ori).as_quat(canonical=True).tolist())
-                angle = Rotation.from_matrix(ee_ori.transpose() @ numpy.matrix(base) @ transform_base_4_5).as_euler(
-                    seq="yzy", degrees=False) * -1
-                angle0 = [-unwind_angles(0, ang) for ang in angle.tolist()]
+                # Calculate joint angle from given rotation
+                rotation_matrix = ee_ori.transpose() @ numpy.matrix(base) @ transform_base_4_5
+                final_euler_angle = get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
+                print(final_euler_angle)
+            else:
+                # Right Arm
+                print('<' * 50 + 'Right' + '>' * 50)
+                # Wrist base coordinate
+                base = Rotation.from_quat(simulation.get_link_orientation_quaternion(13)).as_matrix()
+                transform_base_13_14 = numpy.matrix(
+                    numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+                )
+                # Calculate ee orientation from euler angle
+                ee_ori = numpy.matrix(base) @ transform_base_13_14 @ numpy.matrix(
+                    Rotation.from_euler(seq="yzy", degrees=False, angles=[-simulation.get_joint_angle_rad(i) for i in
+                                                                          [14, 15, 16]]).as_matrix().transpose())
+                draw_coordinate(origin_position=[0, -2, 2],
+                                orientation_quaternion=Rotation.from_matrix(ee_ori).as_quat(canonical=True).tolist())
+                # Get ee orientation directly
+                draw_coordinate(origin_position=[0, 1, 2],
+                                orientation_quaternion=simulation.get_link_orientation_quaternion(16))
+                # Calculate ee orientation from rotation matrix
+                angle14 = simulation.get_joint_angle_rad(14)
+                angle15 = simulation.get_joint_angle_rad(15)
+                angle16 = simulation.get_joint_angle_rad(16)
+                ee_ori = numpy.matrix(base) @ transform_base_13_14 @ numpy.matrix(numpy.array(
+                    [[math.cos(angle14), 0, math.sin(angle14)], [0, 1, 0], [-math.sin(angle14), 0, math.cos(angle14)]]
+                )) @ numpy.matrix(numpy.array(
+                    [[math.cos(angle15), -math.sin(angle15), 0], [math.sin(angle15), math.cos(angle15), 0], [0, 0, 1]]
+                )) @ numpy.matrix(numpy.array(
+                    [[math.cos(angle16), 0, math.sin(angle16)], [0, 1, 0], [-math.sin(angle16), 0, math.cos(angle16)]]
+                ))
+                draw_coordinate(origin_position=[0, -1, 2],
+                                orientation_quaternion=Rotation.from_matrix(ee_ori).as_quat(canonical=True).tolist())
+                # Calculate joint angle from given rotation
+                rotation_matrix = ee_ori.transpose() @ numpy.matrix(base) @ transform_base_13_14
+                final_euler_angle = get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
+                print(final_euler_angle)
 
-                angle1 = angle.tolist()
-                angle1[0] = angle1[0] - math.pi
-                angle1[1] = -angle1[1]
-                angle1[2] = angle1[2] - math.pi
-                angle1 = [-unwind_angles(0, ang) for ang in angle1]
-
-                angle2 = angle.tolist()
-                angle2[0] = math.pi - angle2[0]
-                angle2[2] = math.pi - angle2[2]
-                angle2 = [-unwind_angles(0, ang) for ang in angle2]
-
-                max_angle = [max(angle0), max(angle1), max(angle2)]
+            # Joint angle control
             for index in range(simulation.available_joints_num):
                 if (
                         pybullet.readUserDebugParameter(joint_parameters[index][0])
@@ -113,6 +147,12 @@ if __name__ == "__main__":
                             joint_parameters[index][2]
                         ),
                     )
+            simulation.step_simulation(
+                [
+                    pybullet.readUserDebugParameter(param_id[1])
+                    for param_id in joint_parameters
+                ]
+            )
 
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)

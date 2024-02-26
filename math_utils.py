@@ -34,13 +34,30 @@ def unpack_homogeneous_transfer_matrix(
     )
 
 
-def unwind_angles(now_angle: float, target_angle: float, period=math.pi * 2, step_size=math.pi) -> float:
+def unwind_angles(
+    center: float, input_angle: float, period=math.pi * 2, step_size=math.pi * 2
+) -> float:
     period = math.fabs(period)
-    while target_angle - now_angle > period / 2:
-        target_angle = target_angle - step_size
-    while target_angle - now_angle < -period / 2:
-        target_angle = target_angle + step_size
-    return target_angle
+    while input_angle - center > period / 2:
+        input_angle = input_angle - step_size
+    while input_angle - center < -period / 2:
+        input_angle = input_angle + step_size
+    return input_angle
+
+
+def unwind_angle_list(
+    center_list: list[float],
+    input_list: list[float],
+    period=math.pi * 2,
+    step_size=math.pi * 2,
+) -> list[float]:
+    period = math.fabs(period)
+    if len(center_list) != len(input_list):
+        raise Exception("Angle list length error!")
+    return [
+        unwind_angles(now_angle, target_angle, period=period, step_size=step_size)
+        for now_angle, target_angle in zip(center_list, input_list)
+    ]
 
 
 def point_transfer_scale(

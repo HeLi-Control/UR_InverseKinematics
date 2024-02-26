@@ -5,7 +5,12 @@ import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
 
-from math_utils import unwind_angles, point_transfer_scale, vector_dot_loss
+from math_utils import (
+    unwind_angles,
+    unwind_angle_list,
+    point_transfer_scale,
+    vector_dot_loss,
+)
 from pybullet_draw_display import (
     set_display_lifetime,
     disp_human_demonstrate,
@@ -14,10 +19,11 @@ from pybullet_draw_display import (
 
 global_z_offset = 1.0
 sleep_time_per_frame = 0.001
+calculate_orientation_loss = True
 live_plot_display = True
-given_fixed_orientation = True
-fixed_orientation = [[0, 0, 0, 1], [1, 0, 0, 0]]
-draw_end_effector_coordinate = True
+given_fixed_orientation = False
+fixed_orientation = [[0, 1, 0, 0], [0, 0, 1, 0]]
+draw_end_effector_coordinate = False
 
 
 class UR5_Inverse_Kinematics_Simulation:
@@ -124,87 +130,113 @@ class UR5_Inverse_Kinematics_Simulation:
             )
         )
 
-    def __calculate_inverse_kinematics_given_orientation(
-        self,
-        target_positions: list[list[float]],
-        target_orientations: list[list[float]],
-    ) -> list[float]:
-        res = [
-            list(
-                pybullet.calculateInverseKinematics(
-                    bodyUniqueId=self.robot_id,
-                    endEffectorLinkIndex=self.end_effector_joint_index[0],
-                    targetPosition=target_positions[0],
-                    targetOrientation=target_orientations[0],
-                )
-            )[: self.available_joints_num // 2],
-            list(
-                pybullet.calculateInverseKinematics(
-                    bodyUniqueId=self.robot_id,
-                    endEffectorLinkIndex=self.end_effector_joint_index[1],
-                    targetPosition=target_positions[1],
-                    targetOrientation=target_orientations[1],
-                )
-            )[self.available_joints_num // 2 :],
-        ]
-        return res[0] + res[1]
-
     def end_effector_inverse_kinematics_last3dof(
-        self, target_orientations: list[list[float]]
+        self,
+        target_orientations: list[list[float]],
+        now_angle: list[list[float]],
+        random_select=False,
     ) -> list[list[float]]:
         def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
             return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
 
+        def get_yzy_euler_angles_from_rotation_matrix(
+            rotation_matrix: numpy.matrix,
+        ) -> list[list[float]]:
+            ret_angles = (
+                Rotation.from_matrix(rotation_matrix).as_euler(seq="yzy", degrees=False)
+                * -1
+            )
+            euler_angle = [unwind_angle_list([0] * numpy.size(ret_angles), ret_angles.tolist()) for _ in range(3)]
+
+            euler_angle[1][0] = euler_angle[1][0] - math.pi
+            euler_angle[1][1] = -euler_angle[1][1]
+            euler_angle[1][2] = euler_angle[1][2] - math.pi
+            euler_angle[1] = [unwind_angles(0, ang) for ang in euler_angle[1]]
+
+            euler_angle[2][0] = math.pi - euler_angle[2][0]
+            euler_angle[2][2] = math.pi - euler_angle[2][2]
+            euler_angle[2] = [unwind_angles(0, ang) for ang in euler_angle[2]]
+
+            return euler_angle
+
+        def get_wrist_last3dof(
+            ee_ori: numpy.matrix,
+            base: numpy.matrix,
+            base_transform=numpy.matrix(
+                numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+            ),
+        ) -> list[list[float]]:
+            rotation_matrix = ee_ori.transpose() @ base @ base_transform
+            return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
+
         # Wrist inverse kinematics
-        transform_base_4_5 = numpy.matrix(
-            numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
-        )
         wrist_base_ori = [
-            quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(_i)) @ transform_base_4_5
+            quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(_i))
             for _i in [4, 13]
         ]
         wrist_target_ori = [
-            quaternion_2_numpy_matrix(target_orientations[_i]) for _i in [0, 1]
+            quaternion_2_numpy_matrix(target_ori) for target_ori in target_orientations
         ]
-        wrist_action_ori = [
-            wrist_target_ori[_i] @ wrist_base_ori[_i].transpose() for _i in [0, 1]
-        ]
+        # Select the proper result
+        if random_select:
+            return [
+                get_wrist_last3dof(wrist_target_ori[_i], wrist_base_ori[_i])[0]
+                for _i in [0, 1]
+            ]
+
+        def unwind_euler_angle_lists(
+            center_angle: list[float], target_angles: list[list[float]]
+        ) -> list[list[float]]:
+            return [
+                unwind_angle_list(
+                    [0] * len(center_angle),
+                    unwind_angle_list(center_angle, target_angle),
+                    period=4 * math.pi,
+                    step_size=2 * math.pi,
+                )
+                for target_angle in target_angles
+            ]
+
         last3dof_ang = [
-            (
-                Rotation.from_matrix(
-                    wrist_action_ori[_i]
-                ).as_euler(seq="yzy", degrees=False)
-            ).tolist()
+            unwind_euler_angle_lists(now_angle[_i], get_wrist_last3dof(wrist_target_ori[_i], wrist_base_ori[_i]))
             for _i in [0, 1]
         ]
-        return last3dof_ang
+        angle_error = numpy.sum(
+            numpy.abs(
+                numpy.array(last3dof_ang) - numpy.array([[ang] for ang in now_angle])
+            ),
+            axis=2,
+        )
+        min_index = numpy.argmin(angle_error, axis=1).tolist()
+        return [wrist_angles[index] for wrist_angles, index in zip(last3dof_ang, min_index)]
+        # return [wrist_angles[0] for wrist_angles in last3dof_ang]
 
     def calculate_inverse_kinematics(
         self,
         target_positions: list[list[float]],
         target_orientations: list[list[float]],
     ) -> list[float]:
+        now_ang = [
+            self.get_joint_angle_rad(index) for index in self.available_joints_indices
+        ]
         # Arm inverse kinematics
         _angles = self.__calculate_inverse_kinematics_without_orientation(
             target_joints_indices=[3, 5, 7, 12, 14, 16],
             target_positions=target_positions,
         )
         # Wrist orientation inverse kinematics
-        ang = self.end_effector_inverse_kinematics_last3dof(target_orientations)
-        _angles[3:6] = [angle for angle in ang[0][::-1]]
-        _angles[9:12] = [angle for angle in ang[1][::-1]]
+        ang = self.end_effector_inverse_kinematics_last3dof(
+            target_orientations, [now_ang[3:6], now_ang[9:12]], random_select=True
+        )
+        _angles[3:6] = ang[0]
+        _angles[9:12] = ang[1]
 
-        now_ang = [
-            self.get_joint_angle_rad(index) for index in self.available_joints_indices
-        ]
-        _angles = [
-            unwind_angles(now_ang[_i], _angles[_i]) for _i in range(len(_angles))
-        ]
-        _angles = [
-            unwind_angles(0, _angles[_i], period=4 * math.pi, step_size=2 * math.pi)
-            for _i in range(len(_angles))
-        ]
-        return _angles
+        return unwind_angle_list(
+            [0] * len(_angles),
+            unwind_angle_list(now_ang, _angles),
+            period=4 * math.pi,
+            step_size=2 * math.pi,
+        )
 
     def draw_end_effector_coordinate(
         self, target_orientations: list[list[float]]
@@ -243,7 +275,7 @@ def get_real_target(
     target_points = cvt_target(_target, *arm_base_position)
     pybullet.addUserDebugPoints(
         pointPositions=target_points,
-        pointColorsRGB=[[1, 0, 0] for _ in range(len(target_points))],
+        pointColorsRGB=[[1, 0, 0]] * len(target_points),
         pointSize=2,
         lifeTime=0.1,
     )
@@ -310,18 +342,19 @@ if __name__ == "__main__":
                         )
                     )
                 simulation.step_simulation(angles)
-            if live_plot_display:
+            if calculate_orientation_loss and live_plot_display:
                 plt.clf()
                 plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
                 plt.ylabel("orientation error")
                 plt.pause(sleep_time_per_frame)
                 plt.ioff()
-        if not live_plot_display:
+        if calculate_orientation_loss and not live_plot_display:
             plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
             plt.ylabel("orientation error")
-        plt.savefig("./orientation_error.png")
-        pybullet.disconnect(simulation.client)
-        print(min(ori_err))
+        if calculate_orientation_loss:
+            plt.savefig("./orientation_error.png")
+            pybullet.disconnect(simulation.client)
+            print(min(ori_err))
 
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)
