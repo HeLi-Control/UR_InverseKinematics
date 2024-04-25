@@ -18,12 +18,13 @@ from pybullet_draw_display import (
 )
 
 global_z_offset = 1.0
-sleep_time_per_frame = 0.001
-calculate_orientation_loss = True
-live_plot_display = True
-given_fixed_orientation = False
-fixed_orientation = [[0, 1, 0, 0], [0, 0, 1, 0]]
+sleep_time_per_frame = 0.00
+calculate_orientation_loss = False
+live_plot_display = False
+given_fixed_orientation = True
+fixed_orientation = [[1, 0, 0, 0], [0, 1, 0, 0]]
 draw_end_effector_coordinate = False
+pybullet_show_gui = False
 
 
 class UR5_Inverse_Kinematics_Simulation:
@@ -301,7 +302,7 @@ if __name__ == "__main__":
 
     demonstrate_file = h5py.File(name="./humanDemonstrate.h5", mode="r")
     simulation = UR5_Inverse_Kinematics_Simulation(
-        "./ur_description/ur5_robot_hand.urdf"
+        "./ur_description/ur5_robot_hand.urdf", pybullet_show_gui
     )
     set_display_lifetime(0.01)
     try:
