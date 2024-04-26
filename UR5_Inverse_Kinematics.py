@@ -4,6 +4,7 @@ import numpy
 import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
+import copy
 
 from math_utils import (
     unwind_angles,
@@ -21,10 +22,13 @@ global_z_offset = 1.0
 sleep_time_per_frame = 0.00
 calculate_orientation_loss = False
 live_plot_display = False
-given_fixed_orientation = True
+given_fixed_orientation = False
 fixed_orientation = [[1, 0, 0, 0], [0, 1, 0, 0]]
 draw_end_effector_coordinate = False
-pybullet_show_gui = False
+disp_human_demonstrate_file = './DemonstrateData/demo.pkl'
+# disp_human_demonstrate_file = './DemonstrateData/humanDemonstrate.h5'
+disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
+disp_debug_params = False
 
 
 class UR5_Inverse_Kinematics_Simulation:
@@ -222,8 +226,8 @@ class UR5_Inverse_Kinematics_Simulation:
         ]
         # Arm inverse kinematics
         _angles = self.__calculate_inverse_kinematics_without_orientation(
-            target_joints_indices=[3, 5, 7, 12, 14, 16],
-            target_positions=target_positions,
+            target_joints_indices=[7, 5, 16, 14],
+            target_positions=[target_positions[target_joint] for target_joint in (2, 1, 5, 4)],
         )
         # Wrist orientation inverse kinematics
         ang = self.end_effector_inverse_kinematics_last3dof(
@@ -256,29 +260,38 @@ class UR5_Inverse_Kinematics_Simulation:
 
 
 def get_real_target(
-    arm_base_position: tuple, _target: list[list[float]]
+    arm_base_position: tuple, _target: list[list[float]], man_scale: list
 ) -> list[list[float]]:
-    disp_human_demonstrate(_target, [0, -0.6, 1.5 + global_z_offset])
+    if not man_scale:
+        man_scale = [1.6, 1.5]
 
     def cvt_target(
         target_point: list[list[float]],
         left_base_pos: list[float],
         right_base_pos: list[float],
-        man_scale=2.2,
+            _man_scale: list,
     ) -> list[list[float]]:
-        scale = [man_scale, man_scale]
-        return point_transfer_scale(
-            target_point[:3], target_point[0], left_base_pos, scale=scale[0]
-        ) + point_transfer_scale(
-            target_point[3:], target_point[3], right_base_pos, scale=scale[1]
-        )
+        if _man_scale is None:
+            _man_scale = [1.0, 1.0]
+        converted_target = copy.deepcopy(target_point)
+        converted_target[0] = left_base_pos
+        converted_target[1] = point_transfer_scale(target=[target_point[1]], zero_point=target_point[0],
+                                                   bias=left_base_pos, scale=_man_scale[0])[0]
+        converted_target[2] = point_transfer_scale(target=[target_point[2]], zero_point=target_point[1],
+                                                   bias=converted_target[1], scale=_man_scale[1])[0]
+        converted_target[3] = right_base_pos
+        converted_target[4] = point_transfer_scale(target=[target_point[4]], zero_point=target_point[3],
+                                                   bias=right_base_pos, scale=_man_scale[0])[0]
+        converted_target[5] = point_transfer_scale(target=[target_point[5]], zero_point=target_point[4],
+                                                   bias=converted_target[4], scale=_man_scale[1])[0]
+        return converted_target
 
-    target_points = cvt_target(_target, *arm_base_position)
+    target_points = cvt_target(_target, *arm_base_position, _man_scale=man_scale)
+    disp_human_demonstrate(target_points, draw_bias=[0, -0.6, global_z_offset])
     pybullet.addUserDebugPoints(
         pointPositions=target_points,
         pointColorsRGB=[[1, 0, 0]] * len(target_points),
-        pointSize=2,
-        lifeTime=0.1,
+        pointSize=2, lifeTime=0.1,
     )
     return target_points
 
@@ -297,23 +310,54 @@ def calculate_orientation_error(
 
 
 if __name__ == "__main__":
-    from tqdm import trange
+    from tqdm import tqdm
     import matplotlib.pyplot as plt
-
-    demonstrate_file = h5py.File(name="./humanDemonstrate.h5", mode="r")
+    if disp_human_demonstrate_file_ish5:
+        demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r")
+    else:
+        demonstrate_data = numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
     simulation = UR5_Inverse_Kinematics_Simulation(
-        "./ur_description/ur5_robot_hand.urdf", pybullet_show_gui
+        "./ur_description/ur5_robot_hand.urdf", disp_debug_params
     )
+    display_button_id = pybullet.addUserDebugParameter(
+        paramName="Display", rangeMin=1, rangeMax=0, startValue=1
+    )
+    display_button_id_last_value = 1
+    display_demonstrate_flag = True
+    demonstrate_scale_id = [
+        pybullet.addUserDebugParameter(
+            paramName="Scale1", rangeMin=0.1, rangeMax=10, startValue=1.6
+        ),
+        pybullet.addUserDebugParameter(
+            paramName="Scale2", rangeMin=0.1, rangeMax=10, startValue=1.5
+        )
+    ]
     set_display_lifetime(0.01)
     try:
         ori_err = []
-        for i in trange(len(list(demonstrate_file["l_arm"]))):
-            for _ in range(3):
-                target = (
-                    demonstrate_file["l_arm"][i].tolist()
-                    + demonstrate_file["r_arm"][i].tolist()
-                )
-                target = get_real_target(simulation.arm_base_position, target)
+        with tqdm(total=len(list(demonstrate_data["l_arm"])), unit='Frames') as pbar:
+            i = 0
+            while True:
+                if (disp_debug_params and (
+                        pybullet.readUserDebugParameter(display_button_id)
+                        != display_button_id_last_value)):
+                    display_button_id_last_value = display_button_id_last_value + 1
+                    display_demonstrate_flag = not display_demonstrate_flag
+                if disp_human_demonstrate_file_ish5:
+                    target = (
+                        demonstrate_data["l_arm"][i].tolist()
+                        + demonstrate_data["r_arm"][i].tolist()
+                    )
+                else:
+                    target = demonstrate_data["l_arm"][i] + demonstrate_data["r_arm"][i]
+                if disp_debug_params:
+                    target = get_real_target(simulation.arm_base_position, target,
+                                             man_scale=[
+                                                 pybullet.readUserDebugParameter(demonstrate_scale_id[0]),
+                                                 pybullet.readUserDebugParameter(demonstrate_scale_id[1])
+                                             ])
+                else:
+                    target = get_real_target(simulation.arm_base_position, target, [])
                 if given_fixed_orientation:
                     angles = simulation.calculate_inverse_kinematics(
                         target_positions=target,
@@ -328,30 +372,37 @@ if __name__ == "__main__":
                         )
                     )
                 else:
-                    angles = simulation.calculate_inverse_kinematics(
-                        target_positions=target,
-                        target_orientations=demonstrate_file["ee_ori"][i].tolist(),
-                    )
-                    if draw_end_effector_coordinate:
-                        simulation.draw_end_effector_coordinate(
-                            demonstrate_file["ee_ori"][i].tolist()
+                    ori_data = demonstrate_data["ee_ori"][i]
+                    if disp_human_demonstrate_file_ish5:
+                        angles = simulation.calculate_inverse_kinematics(
+                            target_positions=target, target_orientations=ori_data,
                         )
+                    else:
+                        angles = simulation.calculate_inverse_kinematics(
+                            target_positions=target, target_orientations=ori_data,
+                        )
+                    if draw_end_effector_coordinate:
+                        simulation.draw_end_effector_coordinate(ori_data)
                     ori_err.append(
                         calculate_orientation_error(
-                            demonstrate_file["ee_ori"][i].tolist(),
-                            simulation.ee_orientation_quaternion,
+                            ori_data, simulation.ee_orientation_quaternion,
                         )
                     )
                 simulation.step_simulation(angles)
-            if calculate_orientation_loss and live_plot_display:
-                plt.clf()
-                plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
-                plt.ylabel("orientation error")
-                plt.pause(sleep_time_per_frame)
-                plt.ioff()
-        if calculate_orientation_loss and not live_plot_display:
-            plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
-            plt.ylabel("orientation error")
+                pbar.update()
+                if calculate_orientation_loss and live_plot_display:
+                    plt.clf()
+                    plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
+                    plt.ylabel("orientation error")
+                    plt.pause(sleep_time_per_frame)
+                    plt.ioff()
+                if calculate_orientation_loss and not live_plot_display:
+                    plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
+                    plt.ylabel("orientation error")
+                if display_demonstrate_flag:
+                    i = i + 1
+                    if i >= len(list(demonstrate_data["l_arm"])):
+                        break
         if calculate_orientation_loss:
             plt.savefig("./orientation_error.png")
             pybullet.disconnect(simulation.client)
