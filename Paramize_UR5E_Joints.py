@@ -1,31 +1,19 @@
 import math
 import pybullet
 
-from UR5_Inverse_Kinematics import UR5_Inverse_Kinematics_Simulation
+from UR5E_Inverse_Kinematics import UR5E_Inverse_Kinematics_Simulation
 from pybullet_draw_display import set_display_lifetime, draw_coordinate
 
 disp_given_target_orientation = True
-given_target_orientation = [[0, 0, 0, 1], [0, 0, 0, 1]]
+given_target_orientation = [[0, 0, 0, 1]]
 
 
 if __name__ == "__main__":
-    simulation = UR5_Inverse_Kinematics_Simulation(
-        urdf_file="./RobotDescription/ur_description/ur5_robot_hand.urdf", show_gui=True
+    simulation = UR5E_Inverse_Kinematics_Simulation(
+        urdf_file="./RobotDescription/ur5e/ur5e.urdf", show_gui=True
     )
-    start_angle = [
-        0.0,
-        0.0,
-        0.0,
-        -2.186088266204923,
-        1.0469676627563713,
-        -0.6158551755776115,
-        0.0,
-        0.0,
-        0.0,
-        2.186838581440922,
-        2.0937051407187877,
-        -0.6143539750849345,
-    ]
+    # TODO: This pose still has some bugs.
+    start_angle = [-1.058220386505127, -0.7936654090881348, 1.3889145851135254, -2.546343557215553, 1.0582203778365116, -3.085593291984878e-08]
     joint_parameters = [
         [
             pybullet.addUserDebugParameter(
@@ -57,11 +45,10 @@ if __name__ == "__main__":
                     pybullet.readUserDebugParameter(param_id[1])
                     for param_id in joint_parameters
                 ]
-                ang = simulation.end_effector_inverse_kinematics_last3dof(
-                    given_target_orientation, [[1.0]], random_select=True
-                )
-                target_angle[3:6] = ang[0]
-                target_angle[9:12] = ang[1]
+                target_angle[3:] = simulation.end_effector_inverse_kinematics_last3dof(
+                    given_target_orientation, [[simulation.get_joint_angle_rad(i) for i in (4, 5, 6)]], random_select=False
+                )[0]
+                print('target angle = ', target_angle)
                 simulation.step_simulation(target_angle)
                 simulation.draw_end_effector_coordinate(given_target_orientation)
             else:
