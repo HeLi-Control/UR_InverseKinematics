@@ -1,6 +1,7 @@
 import numpy
 import math
 from scipy.spatial.transform import Rotation
+import copy
 
 
 def vector_dot_loss(a: list[float], b: list[float]) -> float:
@@ -10,7 +11,7 @@ def vector_dot_loss(a: list[float], b: list[float]) -> float:
 
 
 def pack_homogeneous_transfer_matrix(
-    translate: list[float], rotation: list[float]
+        translate: list[float], rotation: list[float]
 ) -> list[list[float]]:
     return numpy.vstack(
         (
@@ -26,7 +27,7 @@ def pack_homogeneous_transfer_matrix(
 
 
 def unpack_homogeneous_transfer_matrix(
-    homogeneous_transfer_matrix: list[list[float]],
+        homogeneous_transfer_matrix: list[list[float]],
 ) -> tuple[list[float], list[list[float]]]:
     return (
         numpy.array(homogeneous_transfer_matrix)[:3, 3].tolist(),
@@ -35,7 +36,7 @@ def unpack_homogeneous_transfer_matrix(
 
 
 def unwind_angles(
-    center: float, input_angle: float, period=math.pi * 2, step_size=math.pi * 2
+        center: float, input_angle: float, period=math.pi * 2, step_size=math.pi * 2
 ) -> float:
     period = math.fabs(period)
     while input_angle - center > period / 2:
@@ -46,10 +47,10 @@ def unwind_angles(
 
 
 def unwind_angle_list(
-    center_list: list[float],
-    input_list: list[float],
-    period=math.pi * 2,
-    step_size=math.pi * 2,
+        center_list: list[float],
+        input_list: list[float],
+        period=math.pi * 2,
+        step_size=math.pi * 2,
 ) -> list[float]:
     period = math.fabs(period)
     if len(center_list) != len(input_list):
@@ -61,9 +62,58 @@ def unwind_angle_list(
 
 
 def point_transfer_scale(
-    target: list[list[float]], zero_point: list[float], bias: list[float], scale=1.0
+        target: list[list[float]], zero_point: list[float], bias: list[float], scale=1.0
 ) -> list[list[float]]:
     converted_target = (
-        numpy.array(target) - numpy.array(zero_point)
-    ) * scale + numpy.array(bias)
+                               numpy.array(target) - numpy.array(zero_point)
+                       ) * scale + numpy.array(bias)
     return converted_target.tolist()
+
+
+def cvt_target(
+        target_point: list[list[float]],
+        base_pos: list[float],
+        _man_scale: list,
+) -> list[list[float]]:
+    if _man_scale is None:
+        _man_scale = [1.0, 1.0]
+    converted_target = copy.deepcopy(target_point)
+    converted_target[0] = base_pos
+    converted_target[1] = point_transfer_scale(target=[target_point[1]], zero_point=target_point[0],
+                                               bias=base_pos, scale=_man_scale[0])[0]
+    converted_target[2] = point_transfer_scale(target=[target_point[2]], zero_point=target_point[1],
+                                               bias=converted_target[1], scale=_man_scale[1])[0]
+    return converted_target
+
+
+def cvt_target_bimanual(
+        target_point: list[list[float]],
+        left_base_pos: list[float],
+        right_base_pos: list[float],
+        _man_scale: list,
+) -> list[list[float]]:
+    if _man_scale is None:
+        _man_scale = [1.0, 1.0]
+    return cvt_target(target_point[:3], left_base_pos, _man_scale) + cvt_target(target_point[3:], right_base_pos, _man_scale)
+
+
+def get_yzy_euler_angles_from_rotation_matrix(
+        rotation_matrix: numpy.matrix,
+) -> list[list[float]]:
+    ret_angles = (
+            Rotation.from_matrix(rotation_matrix).as_euler(seq="yzy", degrees=False)
+            * -1
+    )
+    euler_angle = [unwind_angle_list([0] * numpy.size(ret_angles), ret_angles.tolist()) for _ in range(3)]
+
+    euler_angle[1][0] = euler_angle[1][0] - math.pi
+    euler_angle[1][1] = -euler_angle[1][1]
+    euler_angle[1][2] = euler_angle[1][2] - math.pi
+    euler_angle[1] = [unwind_angles(0, ang) for ang in euler_angle[1]]
+
+    euler_angle[2][0] = math.pi - euler_angle[2][0]
+    euler_angle[2][1] = euler_angle[1][1]
+    euler_angle[2][2] = math.pi - euler_angle[2][2]
+    euler_angle[2] = [unwind_angles(0, ang) for ang in euler_angle[2]]
+
+    return euler_angle
