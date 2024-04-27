@@ -4,6 +4,7 @@ import numpy
 import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
+from loguru import logger
 
 from math_utils import (
     get_yzy_euler_angles_from_rotation_matrix,
@@ -298,6 +299,6 @@ if __name__ == "__main__":
         if calculate_orientation_loss:
             plt.savefig("./orientation_error.png")
             pybullet.disconnect(simulation.client)
-            print(min(ori_err))
+            logger.info(min(ori_err))
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)

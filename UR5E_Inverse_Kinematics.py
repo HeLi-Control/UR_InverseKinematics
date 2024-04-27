@@ -5,6 +5,8 @@ import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
 
+from loguru import logger
+
 from math_utils import (
     get_yzy_euler_angles_from_rotation_matrix,
     unwind_angle_list,
@@ -48,10 +50,7 @@ class UR5E_Inverse_Kinematics_Simulation:
         self.robot_id = pybullet.loadURDF(fileName=urdf_file, basePosition=[0, 0, global_z_offset], useFixedBase=True)
         # Set camera
         pybullet.resetDebugVisualizerCamera(
-            cameraDistance=1.8,
-            cameraYaw=95,
-            cameraPitch=-20,
-            cameraTargetPosition=[0, 0, 0.3 + global_z_offset],
+            cameraDistance=1.8, cameraYaw=95, cameraPitch=-20, cameraTargetPosition=[0, 0, 0.3 + global_z_offset],
         )
         # Get joints available
         self.all_joints_num = pybullet.getNumJoints(self.robot_id)
@@ -61,11 +60,7 @@ class UR5E_Inverse_Kinematics_Simulation:
     @property
     def available_joints_indices(self) -> list[int]:
         # [1, 2, 3, 4, 5, 6]
-        return [
-            index
-            for index in range(self.all_joints_num)
-            if self.get_joint_type(index) != pybullet.JOINT_FIXED
-        ]
+        return [index for index in range(self.all_joints_num) if self.get_joint_type(index) != pybullet.JOINT_FIXED]
 
     @property
     def available_joint_names(self) -> list[str]:
@@ -99,10 +94,8 @@ class UR5E_Inverse_Kinematics_Simulation:
     def step_simulation(self, joint_angles: list[float]) -> None:
         if joint_angles:
             pybullet.setJointMotorControlArray(
-                bodyUniqueId=self.robot_id,
-                jointIndices=self.available_joints_indices,
-                controlMode=pybullet.POSITION_CONTROL,
-                targetPositions=joint_angles,
+                bodyUniqueId=self.robot_id, jointIndices=self.available_joints_indices,
+                controlMode=pybullet.POSITION_CONTROL, targetPositions=joint_angles,
             )
         pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING)
         pybullet.stepSimulation(self.client)
@@ -112,8 +105,7 @@ class UR5E_Inverse_Kinematics_Simulation:
     ) -> list[float]:
         return list(
             pybullet.calculateInverseKinematics2(
-                bodyUniqueId=self.robot_id,
-                endEffectorLinkIndices=target_joints_indices,
+                bodyUniqueId=self.robot_id, endEffectorLinkIndices=target_joints_indices,
                 targetPositions=target_positions,
             )
         )
@@ -139,22 +131,21 @@ class UR5E_Inverse_Kinematics_Simulation:
 
         # Wrist inverse kinematics
         wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(3))]
-        wrist_target_ori = [
-            quaternion_2_numpy_matrix(target_ori) for target_ori in target_orientations
-        ]
+        wrist_target_ori = [quaternion_2_numpy_matrix(target_ori) for target_ori in target_orientations]
 
         def unwind_euler_angle_lists(
                 center_angle: list[float], target_angles: list[list[float]]
         ) -> list[list[float]]:
             return [
-                unwind_angle_list([0] * len(center_angle), unwind_angle_list(center_angle, target_angle))
+                unwind_angle_list([0] * len(center_angle), unwind_angle_list(center_angle, target_angle),
+                                  period=math.pi * 4, step_size=math.pi * 2)
                 for target_angle in target_angles
             ]
 
         last3dof_ang = [unwind_euler_angle_lists(now_angle[0],
                                                  get_wrist_last3dof(wrist_target_ori[0], wrist_base_ori[0]))]
         last3dof_ang = last3dof_ang[0:1]
-        print(last3dof_ang)
+        logger.debug(last3dof_ang)
         # Select the proper result
         if random_select:
             return last3dof_ang[0]
@@ -170,9 +161,7 @@ class UR5E_Inverse_Kinematics_Simulation:
             target_positions: list[list[float]],
             target_orientations: list[list[float]],
     ) -> list[float]:
-        now_ang = [
-            self.get_joint_angle_rad(index) for index in self.available_joints_indices
-        ]
+        now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
         _angles = self.__calculate_inverse_kinematics_without_orientation(
             target_joints_indices=[6, 3],
@@ -185,10 +174,7 @@ class UR5E_Inverse_Kinematics_Simulation:
         _angles[3:6] = ang[0]
 
         return unwind_angle_list(
-            [0] * len(_angles),
-            unwind_angle_list(now_ang, _angles),
-            period=4 * math.pi,
-            step_size=2 * math.pi,
+            [0] * len(_angles), unwind_angle_list(now_ang, _angles), period=4 * math.pi, step_size=2 * math.pi,
         )
 
     def draw_end_effector_coordinate(
@@ -196,14 +182,11 @@ class UR5E_Inverse_Kinematics_Simulation:
     ) -> None:
         for index in range(len(self.end_effector_joint_index)):
             draw_coordinate(
-                self.get_link_position_xyz(self.end_effector_joint_index[index]),
-                target_orientations[index],
+                self.get_link_position_xyz(self.end_effector_joint_index[index]), target_orientations[index],
             )
             draw_coordinate(
                 self.get_link_position_xyz(self.end_effector_joint_index[index]),
-                self.get_link_orientation_quaternion(
-                    self.end_effector_joint_index[index]
-                ),
+                self.get_link_orientation_quaternion(self.end_effector_joint_index[index]),
             )
 
 
@@ -228,9 +211,7 @@ def calculate_orientation_error(
 ) -> float:
     error = [
         vector_dot_loss(target_ori, now_ori)
-        for target_ori, now_ori in zip(
-            target_orientation_quaternion, now_orientation_quaternion
-        )
+        for target_ori, now_ori in zip(target_orientation_quaternion, now_orientation_quaternion)
     ]
     return numpy.linalg.norm(numpy.array(error)) / math.sqrt(2) / 2
 
@@ -243,21 +224,13 @@ if __name__ == "__main__":
         demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r")
     else:
         demonstrate_data = numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
-    simulation = UR5E_Inverse_Kinematics_Simulation(
-        "./RobotDescription/ur5e/ur5e.urdf", disp_debug_params
-    )
-    display_button_id = pybullet.addUserDebugParameter(
-        paramName="Display", rangeMin=1, rangeMax=0, startValue=1
-    )
+    simulation = UR5E_Inverse_Kinematics_Simulation("./RobotDescription/ur5e/ur5e.urdf", disp_debug_params)
+    display_button_id = pybullet.addUserDebugParameter(paramName="Display", rangeMin=1, rangeMax=0, startValue=1)
     display_button_id_last_value = 1
     display_demonstrate_flag = True
     demonstrate_scale_id = [
-        pybullet.addUserDebugParameter(
-            paramName="Scale1", rangeMin=0.1, rangeMax=10, startValue=1.6
-        ),
-        pybullet.addUserDebugParameter(
-            paramName="Scale2", rangeMin=0.1, rangeMax=10, startValue=1.5
-        )
+        pybullet.addUserDebugParameter(paramName="Scale1", rangeMin=0.1, rangeMax=10, startValue=1.6),
+        pybullet.addUserDebugParameter(paramName="Scale2", rangeMin=0.1, rangeMax=10, startValue=1.5)
     ]
     set_display_lifetime(0.01)
 
@@ -272,10 +245,7 @@ if __name__ == "__main__":
                     display_button_id_last_value = display_button_id_last_value + 1
                     display_demonstrate_flag = not display_demonstrate_flag
                 if disp_human_demonstrate_file_ish5:
-                    target = (
-                            demonstrate_data["l_arm"][i].tolist()
-                            + demonstrate_data["r_arm"][i].tolist()
-                    )
+                    target = demonstrate_data["l_arm"][i].tolist() + demonstrate_data["r_arm"][i].tolist()
                 else:
                     target = demonstrate_data["l_arm"][i] + demonstrate_data["r_arm"][i]
                 if disp_debug_params:
@@ -334,7 +304,7 @@ if __name__ == "__main__":
         if calculate_orientation_loss:
             plt.savefig("./orientation_error.png")
             pybullet.disconnect(simulation.client)
-            print(min(ori_err))
+            logger.info(min(ori_err))
 
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)

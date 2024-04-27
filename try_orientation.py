@@ -8,6 +8,8 @@ from scipy.spatial.transform import Rotation
 import numpy
 from math_utils import unwind_angles
 
+from loguru import logger
+
 
 check_left = True
 
@@ -27,7 +29,7 @@ def get_yzy_euler_angles_from_rotation_matrix(target_rotation_matrix: numpy.matr
     euler_angle[2] = [unwind_angles(0, ang) for ang in euler_angle[2]]
 
     max_angle = [max(numpy.abs(numpy.array(angle)).tolist()) for angle in euler_angle]
-    print(euler_angle[0])
+    logger.info(euler_angle[0])
     return euler_angle[max_angle.index(min(max_angle))]
 
 
@@ -63,7 +65,7 @@ if __name__ == "__main__":
         while True:
             if check_left:
                 # Left Arm
-                print('<' * 50 + 'Left' + '>' * 50)
+                logger.debug('<' * 50 + 'Left' + '>' * 50)
                 # Wrist base coordinate
                 base = Rotation.from_quat(simulation.get_link_orientation_quaternion(4)).as_matrix()
                 transform_base_4_5 = numpy.matrix(
@@ -94,10 +96,10 @@ if __name__ == "__main__":
                 # Calculate joint angle from given rotation
                 rotation_matrix = ee_ori.transpose() @ numpy.matrix(base) @ transform_base_4_5
                 final_euler_angle = get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
-                print(final_euler_angle)
+                logger.debug(final_euler_angle)
             else:
                 # Right Arm
-                print('<' * 50 + 'Right' + '>' * 50)
+                logger.debug('<' * 50 + 'Right' + '>' * 50)
                 # Wrist base coordinate
                 base = Rotation.from_quat(simulation.get_link_orientation_quaternion(13)).as_matrix()
                 transform_base_13_14 = numpy.matrix(
@@ -128,7 +130,7 @@ if __name__ == "__main__":
                 # Calculate joint angle from given rotation
                 rotation_matrix = ee_ori.transpose() @ numpy.matrix(base) @ transform_base_13_14
                 final_euler_angle = get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
-                print(final_euler_angle)
+                logger.info(final_euler_angle)
 
             # Joint angle control
             for index in range(simulation.available_joints_num):
