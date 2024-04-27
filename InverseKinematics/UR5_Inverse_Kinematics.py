@@ -179,14 +179,10 @@ class ur5_robot_inverse_kinematics:
     ) -> list[float]:
         now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
-        if use_elbow_pos:
-            _angles = self.calculate_inverse_kinematics_without_orientation(
-                target_joints_indices=[7, 5, 16, 14],
-                target_positions=[target_positions[target_joint] for target_joint in (2, 1, 5, 4)])
-        else:
-            _angles = self.calculate_inverse_kinematics_without_orientation(
-                target_joints_indices=[7, 16],
-                target_positions=[target_positions[target_joint] for target_joint in (2, 5)])
+        _angles = self.calculate_inverse_kinematics_without_orientation(
+            target_joints_indices=[7, 5, 16, 14] if use_elbow_pos else [7, 16],
+            target_positions=[target_positions[target_joint] for target_joint in
+                              ([2, 1, 5, 4] if use_elbow_pos else [2, 5])])
         # Wrist orientation inverse kinematics
         ang = self.end_effector_inverse_kinematics_last3dof(
             target_orientations, [now_ang[3:6], now_ang[9:12]], random_select=True, orientation_world=False
