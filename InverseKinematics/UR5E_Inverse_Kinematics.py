@@ -45,7 +45,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
     def end_effector_inverse_kinematics_last3dof(
             self,
-            target_orientations: list[list[float]],
+            target_orientations: list[float],
             now_angle: list[list[float]],
             random_select=False,
     ) -> list[list[float]]:
@@ -62,7 +62,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
         # Wrist inverse kinematics
         wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(3))]
-        wrist_target_ori = [quaternion_2_numpy_matrix(target_ori) for target_ori in target_orientations]
+        wrist_target_ori = quaternion_2_numpy_matrix(target_orientations)
 
         def unwind_euler_angle_lists(
                 center_angle: list[float], target_angles: list[list[float]]
@@ -74,7 +74,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             ]
 
         last3dof_ang = [unwind_euler_angle_lists(now_angle[0],
-                                                 get_wrist_last3dof(wrist_target_ori[0], wrist_base_ori[0]))]
+                                                 get_wrist_last3dof(wrist_target_ori, wrist_base_ori[0]))]
         last3dof_ang = last3dof_ang[0:1]
         # Select the proper result
         if random_select:
@@ -89,11 +89,11 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
     def calculate_inverse_kinematics(
             self,
             target_positions: list[list[float]],
-            target_orientations: list[list[float]],
+            target_orientations: list[float],
     ) -> list[float]:
         now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
-        _angles = self.calculate_inverse_kinematics_without_orientation(target_joints_indices=[6, 3],
+        _angles = self.calculate_inverse_kinematics_without_orientation(target_joints_indices=[6, 4],
                                                                         target_positions=[target_positions[target_joint]
                                                                                           for target_joint in (2, 1)])
         # Wrist orientation inverse kinematics
@@ -120,7 +120,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             arm_base_position: list[float], _target: list[list[float]], man_scale: list
     ) -> list[list[float]]:
         if not man_scale:
-            man_scale = [1.6, 1.5]
+            man_scale = [1.6, 1.8]
         target_points = cvt_target(_target, arm_base_position, _man_scale=man_scale)
         disp_human_demonstrate_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
         pybullet.addUserDebugPoints(
@@ -164,22 +164,23 @@ if __name__ == "__main__":
     # Simulation in loop
     try:
         with (tqdm(total=len(list(demonstrate_data["l_arm"])), unit='Frames') as pbar):
-            loop_index = 0
-            while True:
-                # Read demonstrate data
-                target_pos = demonstrate_data["l_arm"][loop_index].tolist() if disp_human_demonstrate_file_ish5 \
-                    else demonstrate_data["l_arm"][loop_index]
-                target_ori = [fixed_orientation] if given_fixed_orientation else demonstrate_data["ee_ori"][
-                    loop_index]
-                # Draw orientation coordinate
-                if given_fixed_orientation and draw_end_effector_coordinate:
-                    simulation.draw_end_effector_coordinate(fixed_orientation)
-                # Step simulation
-                if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori):
-                    loop_index = loop_index + 1
-                    if loop_index >= len(list(demonstrate_data["l_arm"])):
-                        break
-                # Update tqdm bar
-                pbar.update()
+            for _ in range(3):
+                loop_index = 0
+                while True:
+                    # Read demonstrate data
+                    target_pos = demonstrate_data["l_arm"][loop_index].tolist() if disp_human_demonstrate_file_ish5 \
+                        else demonstrate_data["l_arm"][loop_index]
+                    target_ori = [fixed_orientation] if given_fixed_orientation else demonstrate_data["ee_ori"][
+                        loop_index][0]
+                    # Draw orientation coordinate
+                    if draw_end_effector_coordinate:
+                        simulation.draw_end_effector_coordinate(target_ori)
+                    # Step simulation
+                    if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori):
+                        loop_index = loop_index + 1
+                        if loop_index >= len(list(demonstrate_data["l_arm"])):
+                            break
+                    # Update tqdm bar
+                    pbar.update()
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)

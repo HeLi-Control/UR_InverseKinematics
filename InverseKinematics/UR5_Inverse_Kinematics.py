@@ -94,7 +94,7 @@ class ur5_robot_inverse_kinematics:
         return list(pybullet.getLinkState(self.robot_id, link_index, computeForwardKinematics=True)[4])
 
     def get_link_orientation_quaternion(self, link_index: int) -> list[float]:
-        return pybullet.getLinkState(self.robot_id, link_index, computeForwardKinematics=True)[5]
+        return list(pybullet.getLinkState(self.robot_id, link_index, computeForwardKinematics=True)[5])
 
     def step_simulation(self, joint_angles: list[float]) -> None:
         if joint_angles:
@@ -255,8 +255,8 @@ if __name__ == "__main__":
                 target_ori = fixed_orientation if given_fixed_orientation else demonstrate_data["ee_ori"][
                     loop_index]
                 # Draw orientation coordinate
-                if given_fixed_orientation and draw_end_effector_coordinate:
-                    simulation.draw_end_effector_coordinate(fixed_orientation)
+                if draw_end_effector_coordinate:
+                    simulation.draw_end_effector_coordinate(target_ori)
                 # Step simulation
                 if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori):
                     loop_index = loop_index + 1
