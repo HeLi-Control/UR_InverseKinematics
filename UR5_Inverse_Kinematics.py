@@ -25,8 +25,8 @@ live_plot_display = False
 given_fixed_orientation = False
 fixed_orientation = [[1, 0, 0, 0], [0, 1, 0, 0]]
 draw_end_effector_coordinate = False
-disp_human_demonstrate_file = './DemonstrateData/demo.pkl'
-# disp_human_demonstrate_file = './DemonstrateData/humanDemonstrate.h5'
+# disp_human_demonstrate_file = './DemonstrateData/demo.pkl'
+disp_human_demonstrate_file = './DemonstrateData/humanDemonstrate.h5'
 disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
 disp_debug_params = False
 
