@@ -120,6 +120,7 @@ class ur5_robot_inverse_kinematics:
             target_orientations: list[list[float]],
             now_angle: list[list[float]],
             random_select=False,
+            orientation_world=True
     ) -> list[list[float]]:
         def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
             return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
@@ -134,10 +135,6 @@ class ur5_robot_inverse_kinematics:
             rotation_matrix = ee_ori.transpose() @ base @ base_transform
             return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
 
-        # Wrist inverse kinematics
-        wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(_i)) for _i in [4, 13]]
-        wrist_target_ori = [quaternion_2_numpy_matrix(target_orientation) for target_orientation in target_orientations]
-
         def unwind_euler_angle_lists(
                 center_angle: list[float], target_angles: list[list[float]]
         ) -> list[list[float]]:
@@ -149,10 +146,21 @@ class ur5_robot_inverse_kinematics:
                 for target_angle in target_angles
             ]
 
-        last3dof_ang = [
-            unwind_euler_angle_lists(now_angle[_i], get_wrist_last3dof(wrist_target_ori[_i], wrist_base_ori[_i]))
-            for _i in [0, 1]
-        ]
+        if orientation_world:
+            # Wrist inverse kinematics
+            wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(_i)) for _i in [4, 13]]
+            wrist_target_ori = [quaternion_2_numpy_matrix(target_orientation) for target_orientation in
+                                target_orientations]
+            last3dof_ang = [
+                unwind_euler_angle_lists(now_angle[_i], get_wrist_last3dof(wrist_target_ori[_i], wrist_base_ori[_i]))
+                for _i in [0, 1]
+            ]
+        else:
+            last3dof_ang = [unwind_euler_angle_lists(
+                now_angle[0], get_yzy_euler_angles_from_rotation_matrix(
+                    quaternion_2_numpy_matrix(target_orientation) @ numpy.matrix(
+                        numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])))) for target_orientation in
+                target_orientations]
         # Select the proper result
         if random_select:
             return [last3dof_ang[0][0], last3dof_ang[1][0]]
@@ -167,16 +175,21 @@ class ur5_robot_inverse_kinematics:
             self,
             target_positions: list[list[float]],
             target_orientations: list[list[float]],
+            use_elbow_pos=True
     ) -> list[float]:
         now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
-        _angles = self.calculate_inverse_kinematics_without_orientation(target_joints_indices=[7, 5, 16, 14],
-                                                                        target_positions=[target_positions[target_joint]
-                                                                                          for target_joint in
-                                                                                          (2, 1, 5, 4)])
+        if use_elbow_pos:
+            _angles = self.calculate_inverse_kinematics_without_orientation(
+                target_joints_indices=[7, 5, 16, 14],
+                target_positions=[target_positions[target_joint] for target_joint in (2, 1, 5, 4)])
+        else:
+            _angles = self.calculate_inverse_kinematics_without_orientation(
+                target_joints_indices=[7, 16],
+                target_positions=[target_positions[target_joint] for target_joint in (2, 5)])
         # Wrist orientation inverse kinematics
         ang = self.end_effector_inverse_kinematics_last3dof(
-            target_orientations, [now_ang[3:6], now_ang[9:12]], random_select=True
+            target_orientations, [now_ang[3:6], now_ang[9:12]], random_select=True, orientation_world=False
         )
         _angles[3:6] = ang[0]
         _angles[9:12] = ang[1]
@@ -226,7 +239,7 @@ class ur5_robot_inverse_kinematics:
         _target_pos = self.get_real_target(simulation.arm_base_position, _target_pos,
                                            man_scale=interact_scale if self.show_gui else [])
         # Inverse Kinematics
-        angles = simulation.calculate_inverse_kinematics(_target_pos, _target_ori)
+        angles = simulation.calculate_inverse_kinematics(_target_pos, _target_ori, use_elbow_pos=False)
         # Step simulation
         simulation.step_simulation(angles)
         return self.display_demonstrate_flag if self.show_gui else True

@@ -48,6 +48,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             target_orientations: list[float],
             now_angle: list[list[float]],
             random_select=False,
+            orientation_world=True
     ) -> list[list[float]]:
         def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
             return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
@@ -60,10 +61,6 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             rotation_matrix = ee_ori.transpose() @ base @ base_transform
             return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
 
-        # Wrist inverse kinematics
-        wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(3))]
-        wrist_target_ori = quaternion_2_numpy_matrix(target_orientations)
-
         def unwind_euler_angle_lists(
                 center_angle: list[float], target_angles: list[list[float]]
         ) -> list[list[float]]:
@@ -72,11 +69,18 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
                                   period=math.pi * 4, step_size=math.pi * 2)
                 for target_angle in target_angles
             ]
-        # FIXME: Make sure where the orientation makes sense
-        # last3dof_ang = [unwind_euler_angle_lists(now_angle[0],
-        #                                          get_wrist_last3dof(wrist_target_ori, wrist_base_ori[0]))]
-        last3dof_ang = [unwind_euler_angle_lists(
-            now_angle[0], get_yzy_euler_angles_from_rotation_matrix(quaternion_2_numpy_matrix(target_orientations)))]
+
+        if orientation_world:
+            # Wrist inverse kinematics
+            wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(3))]
+            wrist_target_ori = quaternion_2_numpy_matrix(target_orientations)
+            last3dof_ang = [unwind_euler_angle_lists(
+                now_angle[0], get_wrist_last3dof(wrist_target_ori, wrist_base_ori[0]))]
+        else:
+            last3dof_ang = [unwind_euler_angle_lists(
+                now_angle[0], get_yzy_euler_angles_from_rotation_matrix(
+                    quaternion_2_numpy_matrix(target_orientations) @ numpy.matrix(
+                        numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]))))]
         last3dof_ang = last3dof_ang[0:1]
         # Select the proper result
         if random_select:
@@ -100,7 +104,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
                                                                                           for target_joint in (2, 1)])
         # Wrist orientation inverse kinematics
         ang = self.end_effector_inverse_kinematics_last3dof(
-            target_orientations, [now_ang[3:6]], random_select=False
+            target_orientations, [now_ang[3:6]], random_select=False, orientation_world=False
         )
         _angles[3:6] = ang[0]
 
