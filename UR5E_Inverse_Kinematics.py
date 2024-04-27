@@ -15,7 +15,7 @@ from math_utils import (
 )
 from pybullet_draw_display import (
     set_display_lifetime,
-    disp_human_demonstrate,
+    disp_human_demonstrate_arm,
     draw_coordinate,
 )
 
@@ -122,9 +122,7 @@ class UR5E_Inverse_Kinematics_Simulation:
         def get_wrist_last3dof(
                 ee_ori: numpy.matrix,
                 base: numpy.matrix,
-                base_transform=numpy.matrix(
-                    numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
-                ),
+                base_transform=numpy.matrix(numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
         ) -> list[list[float]]:
             rotation_matrix = ee_ori.transpose() @ base @ base_transform
             return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
@@ -145,7 +143,6 @@ class UR5E_Inverse_Kinematics_Simulation:
         last3dof_ang = [unwind_euler_angle_lists(now_angle[0],
                                                  get_wrist_last3dof(wrist_target_ori[0], wrist_base_ori[0]))]
         last3dof_ang = last3dof_ang[0:1]
-        logger.debug(last3dof_ang)
         # Select the proper result
         if random_select:
             return last3dof_ang[0]
@@ -196,7 +193,7 @@ def get_real_target(
     if not man_scale:
         man_scale = [1.6, 1.5]
     target_points = cvt_target(_target, arm_base_position, _man_scale=man_scale)
-    disp_human_demonstrate(target_points, draw_bias=[0, -0.6, global_z_offset])
+    disp_human_demonstrate_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
     pybullet.addUserDebugPoints(
         pointPositions=target_points,
         pointColorsRGB=[[1, 0, 0]] * len(target_points),
@@ -218,7 +215,6 @@ def calculate_orientation_error(
 
 if __name__ == "__main__":
     from tqdm import tqdm
-    import matplotlib.pyplot as plt
 
     if disp_human_demonstrate_file_ish5:
         demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r")
@@ -258,8 +254,7 @@ if __name__ == "__main__":
                     target = get_real_target(simulation.arm_base_position, target, [])
                 if given_fixed_orientation:
                     angles = simulation.calculate_inverse_kinematics(
-                        target_positions=target,
-                        target_orientations=[fixed_orientation],
+                        target_positions=target, target_orientations=[fixed_orientation],
                     )
                     if draw_end_effector_coordinate:
                         simulation.draw_end_effector_coordinate([fixed_orientation])
@@ -288,23 +283,10 @@ if __name__ == "__main__":
                     )
                 simulation.step_simulation(angles)
                 pbar.update()
-                if calculate_orientation_loss and live_plot_display:
-                    plt.clf()
-                    plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
-                    plt.ylabel("orientation error")
-                    plt.pause(sleep_time_per_frame)
-                    plt.ioff()
-                if calculate_orientation_loss and not live_plot_display:
-                    plt.plot([i + 1 for i in range(len(ori_err))], ori_err, "b*-")
-                    plt.ylabel("orientation error")
                 if display_demonstrate_flag:
                     i = i + 1
                     if i >= len(list(demonstrate_data["l_arm"])):
                         break
-        if calculate_orientation_loss:
-            plt.savefig("./orientation_error.png")
-            pybullet.disconnect(simulation.client)
-            logger.info(min(ori_err))
 
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)

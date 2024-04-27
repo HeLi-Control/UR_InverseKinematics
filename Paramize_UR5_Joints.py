@@ -32,6 +32,7 @@ if __name__ == "__main__":
     ]
     button_initial_value = [1.0 for _ in simulation.available_joints_indices]
     show_coordinate_flag = [False for _ in simulation.available_joints_indices]
+    set_ang = [[0, 0, 0], [0, 0, 0]]
     set_display_lifetime(0.01)
     try:
         while True:
@@ -39,10 +40,11 @@ if __name__ == "__main__":
                 target_angle = [pybullet.readUserDebugParameter(param_id[1]) for param_id in joint_parameters]
                 now_ang = [simulation.get_joint_angle_rad(index) for index in simulation.available_joints_indices]
                 ang = simulation.end_effector_inverse_kinematics_last3dof(
-                    given_target_orientation, [now_ang[3:6], now_ang[9:12]], random_select=True
+                    given_target_orientation, now_angle=set_ang, random_select=True
                 )
                 target_angle[3:6] = ang[0]
                 target_angle[9:12] = ang[1]
+                set_ang = [target_angle[3:6], target_angle[9:12]]
                 simulation.step_simulation(target_angle)
                 simulation.draw_end_effector_coordinate(given_target_orientation)
             else:

@@ -14,7 +14,7 @@ from math_utils import (
 )
 from pybullet_draw_display import (
     set_display_lifetime,
-    disp_human_demonstrate,
+    disp_human_demonstrate_bimanual_arm,
     draw_coordinate,
 )
 
@@ -202,7 +202,7 @@ def get_real_target(
         man_scale = [1.6, 1.5]
         # man_scale = [2.5, 2.5]
     target_points = cvt_target_bimanual(_target, *arm_base_position, _man_scale=man_scale)
-    disp_human_demonstrate(target_points, draw_bias=[0, -0.6, global_z_offset])
+    disp_human_demonstrate_bimanual_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
     pybullet.addUserDebugPoints(
         pointPositions=target_points, pointColorsRGB=[[1, 0, 0]] * len(target_points), pointSize=2, lifeTime=0.1,
     )

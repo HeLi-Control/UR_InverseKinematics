@@ -4,7 +4,6 @@ import pybullet
 from UR5E_Inverse_Kinematics import UR5E_Inverse_Kinematics_Simulation
 from pybullet_draw_display import set_display_lifetime, draw_coordinate
 
-from loguru import logger
 import matplotlib.pyplot as plt
 
 disp_given_target_orientation = True
@@ -46,12 +45,12 @@ if __name__ == "__main__":
                     pybullet.readUserDebugParameter(param_id[1]) for param_id in joint_parameters
                 ]
                 now_angle = [[simulation.get_joint_angle_rad(i) for i in (4, 5, 6)]]
-                logger.debug('current angle = ' + str(now_angle))
+                # logger.debug('current angle = ' + str(now_angle))
                 target_angle[3:] = simulation.end_effector_inverse_kinematics_last3dof(
                     given_target_orientation, now_angle=set_ang, random_select=True
                 )[0]
                 set_ang = [target_angle[3:]]
-                logger.debug('target angle = ' + str(target_angle))
+                # logger.debug('target angle = ' + str(target_angle))
                 simulation.step_simulation(target_angle)
                 simulation.draw_end_effector_coordinate(given_target_orientation)
                 # Draw set angle plot

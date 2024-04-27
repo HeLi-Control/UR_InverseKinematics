@@ -1,0 +1,12 @@
+# 这个文件暂时没有被使用到
+RUN_ROBOT_CFG:
+  RUN_ROBOT_UR5: False
+  RUN_ROBOT_UR5E: True
+ROBOT_PARAMS:
+  UR5_CFG:
+    URDF_PATH: "./RobotDescription/ur_description/ur5_robot_hand.urdf"
+  UR5E_CFG:
+    URDF_PATH: "./RobotDescription/ur5e/ur5e.urdf"
+HUMAN_DEMONSTRATE_CFG:
+#  DATA_FILE_PATH: "./DemonstrateData/humanDemonstrate.h5"
+  DATA_FILE_PATH: "./DemonstrateData/demo.pkl"
