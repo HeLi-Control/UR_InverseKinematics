@@ -1,8 +1,8 @@
 import math
 import pybullet
 
-from UR5E_Inverse_Kinematics import UR5E_Inverse_Kinematics_Simulation
-from pybullet_draw_display import set_display_lifetime, draw_coordinate
+from InverseKinematics.UR5E_Inverse_Kinematics import ur5e_robot_inverse_kinematics
+from Utils.pybullet_draw_display import set_display_lifetime, draw_coordinate
 
 import matplotlib.pyplot as plt
 
@@ -11,12 +11,12 @@ given_target_orientation = [[0, 0, 0, 1]]
 show_set_angle_plot = False
 
 if __name__ == "__main__":
-    simulation = UR5E_Inverse_Kinematics_Simulation(
-        urdf_file="./RobotDescription/ur5e/ur5e.urdf", show_gui=True
+    simulation = ur5e_robot_inverse_kinematics(
+        urdf_file="RobotDescription/ur5e/ur5e.urdf", show_gui=True
     )
     start_angle = [-1.058220386505127, -0.7936654090881348, 1.3889145851135254, -2.546343557215553, 1.0582203778365116,
                    -3.085593291984878e-08]
-    # Create interfere debug parameters
+    # Create interacting debug parameters
     joint_parameters = [
         [
             pybullet.addUserDebugParameter(

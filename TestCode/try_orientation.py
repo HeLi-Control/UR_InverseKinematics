@@ -1,12 +1,13 @@
+# This file is used to test and verify the algorithm, actually is not used in the remaining part of the project.
 import math
 import pybullet
 
-from UR5_Inverse_Kinematics import UR5_Inverse_Kinematics_Simulation
-from pybullet_draw_display import set_display_lifetime, draw_coordinate
+from InverseKinematics.UR5_Inverse_Kinematics import ur5_robot_inverse_kinematics
+from Utils.pybullet_draw_display import set_display_lifetime, draw_coordinate
 
 from scipy.spatial.transform import Rotation
 import numpy
-from math_utils import unwind_angles
+from Utils.math_utils import unwind_angles
 
 from loguru import logger
 
@@ -34,8 +35,8 @@ def get_yzy_euler_angles_from_rotation_matrix(target_rotation_matrix: numpy.matr
 
 
 if __name__ == "__main__":
-    simulation = UR5_Inverse_Kinematics_Simulation(
-        urdf_file="./ur_description/ur5_robot_hand.urdf", show_gui=True
+    simulation = ur5_robot_inverse_kinematics(
+        urdf_file="../RobotDescription/ur_description/ur5_robot_hand.urdf", show_gui=True
     )
     start_angle = [0.0, 0.0, 0.0, -2.186088266204923, 1.0469676627563713, -0.6158551755776115,
                    0.0, 0.0, 0.0, 2.186838581440922, 2.0937051407187877, -0.6143539750849345]

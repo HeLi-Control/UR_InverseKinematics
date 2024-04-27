@@ -94,7 +94,8 @@ def cvt_target_bimanual(
 ) -> list[list[float]]:
     if _man_scale is None:
         _man_scale = [1.0, 1.0]
-    return cvt_target(target_point[:3], left_base_pos, _man_scale) + cvt_target(target_point[3:], right_base_pos, _man_scale)
+    return cvt_target(target_point[:3], left_base_pos, _man_scale) + cvt_target(target_point[3:], right_base_pos,
+                                                                                _man_scale)
 
 
 def get_yzy_euler_angles_from_rotation_matrix(
@@ -117,3 +118,14 @@ def get_yzy_euler_angles_from_rotation_matrix(
     euler_angle[2] = [unwind_angles(0, ang) for ang in euler_angle[2]]
 
     return euler_angle
+
+
+def calculate_orientation_error(
+        target_orientation_quaternion: list[list[float]],
+        now_orientation_quaternion: list[list[float]],
+) -> float:
+    error = [
+        vector_dot_loss(target_ori, now_ori)
+        for target_ori, now_ori in zip(target_orientation_quaternion, now_orientation_quaternion)
+    ]
+    return numpy.linalg.norm(numpy.array(error)) / math.sqrt(2) / 2
