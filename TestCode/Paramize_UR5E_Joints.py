@@ -12,7 +12,7 @@ show_set_angle_plot = False
 
 if __name__ == "__main__":
     simulation = ur5e_robot_inverse_kinematics(
-        urdf_file="RobotDescription/ur5e/ur5e.urdf", show_gui=True
+        urdf_file="../RobotDescription/ur5e/ur5e.urdf", show_gui=True
     )
     start_angle = [-1.058220386505127, -0.7936654090881348, 1.3889145851135254, -2.546343557215553, 1.0582203778365116,
                    -3.085593291984878e-08]

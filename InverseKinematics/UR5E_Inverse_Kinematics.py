@@ -7,7 +7,7 @@ import pybullet
 
 from tqdm import tqdm
 
-from UR5_Inverse_Kinematics import ur5_robot_inverse_kinematics
+from InverseKinematics.UR5_Inverse_Kinematics import ur5_robot_inverse_kinematics, read_frame_demonstrate_data
 
 from Utils.math_utils import (
     get_yzy_euler_angles_from_rotation_matrix,
@@ -17,18 +17,18 @@ from Utils.math_utils import (
 from Utils.pybullet_draw_display import (
     set_display_lifetime,
     disp_human_demonstrate_arm,
-    draw_coordinate,
 )
 
 global_z_offset = 1.0
 given_fixed_orientation = False
 fixed_orientation = [1.0, 0.0, 0.0, 0.0]
-draw_end_effector_coordinate = False
+draw_end_effector_coordinate = True
+calculate_wrist_orientation_self = True
 
 
 class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
-    def __init__(self, urdf_file: str, show_gui=False):
-        super(ur5e_robot_inverse_kinematics, self).__init__(urdf_file, show_gui)
+    def __init__(self, urdf_file: str, ik_use_world_orientation=True, show_gui=False):
+        super(ur5e_robot_inverse_kinematics, self).__init__(urdf_file, ik_use_world_orientation, show_gui)
         self.end_effector_joint_index = [6]
 
     # .available_joints_indices = [1, 2, 3, 4, 5, 6]
@@ -47,19 +47,10 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             self,
             target_orientations: list[float],
             now_angle: list[list[float]],
-            random_select=False,
-            orientation_world=True
+            random_select=False
     ) -> list[list[float]]:
         def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
             return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
-
-        def get_wrist_last3dof(
-                ee_ori: numpy.matrix,
-                base: numpy.matrix,
-                base_transform=numpy.matrix(numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
-        ) -> list[list[float]]:
-            rotation_matrix = ee_ori.transpose() @ base @ base_transform
-            return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
 
         def unwind_euler_angle_lists(
                 center_angle: list[float], target_angles: list[list[float]]
@@ -70,7 +61,15 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
                 for target_angle in target_angles
             ]
 
-        if orientation_world:
+        if self.ik_use_world_orientation:
+            def get_wrist_last3dof(
+                    ee_ori: numpy.matrix,
+                    base: numpy.matrix,
+                    base_transform=numpy.matrix(numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
+            ) -> list[list[float]]:
+                rotation_matrix = ee_ori.transpose() @ base @ base_transform
+                return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
+
             # Wrist inverse kinematics
             wrist_base_ori = [quaternion_2_numpy_matrix(self.get_link_orientation_quaternion(3))]
             wrist_target_ori = quaternion_2_numpy_matrix(target_orientations)
@@ -105,7 +104,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             target_positions=[target_positions[target_joint] for target_joint in ([2, 1] if use_elbow_pos else [2])])
         # Wrist orientation inverse kinematics
         ang = self.end_effector_inverse_kinematics_last3dof(
-            target_orientations, [now_ang[3:6]], random_select=False, orientation_world=False
+            target_orientations, [now_ang[3:6]], random_select=False
         )
         _angles[3:6] = ang[0]
 
@@ -113,14 +112,8 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             [0] * len(_angles), unwind_angle_list(now_ang, _angles), period=4 * math.pi, step_size=2 * math.pi,
         )
 
-    def draw_end_effector_coordinate(self, target_orientations: list[float]) -> None:
-        draw_coordinate(
-            self.get_link_position_xyz(self.end_effector_joint_index[0]), target_orientations,
-        )
-        draw_coordinate(
-            self.get_link_position_xyz(self.end_effector_joint_index[0]),
-            self.get_link_orientation_quaternion(self.end_effector_joint_index[0]),
-        )
+    def draw_end_effector_coordinate(self, target_orientation: list[float]) -> None:
+        self.draw_single_joint_coordinate(self.end_effector_joint_index[0], target_orientation)
 
     @staticmethod
     def get_real_target(
@@ -131,8 +124,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         target_points = cvt_target(_target, arm_base_position, _man_scale=man_scale)
         disp_human_demonstrate_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
         pybullet.addUserDebugPoints(
-            pointPositions=target_points,
-            pointColorsRGB=[[1, 0, 0]] * len(target_points),
+            pointPositions=target_points[:3], pointColorsRGB=[[1, 0, 0]] * len(target_points[:3]),
             pointSize=2, lifeTime=0.1,
         )
         return target_points
@@ -166,7 +158,8 @@ if __name__ == "__main__":
     demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r") if disp_human_demonstrate_file_ish5 \
         else numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
     # Start simulation
-    simulation = ur5e_robot_inverse_kinematics(urdf_file="../RobotDescription/ur5e/ur5e.urdf", show_gui=False)
+    simulation = ur5e_robot_inverse_kinematics(urdf_file="../RobotDescription/ur5e/ur5e.urdf",
+                                               ik_use_world_orientation=True, show_gui=False)
     set_display_lifetime(0.01)
     # Simulation in loop
     try:
@@ -174,18 +167,20 @@ if __name__ == "__main__":
             loop_index = 0
             while True:
                 # Read demonstrate data
-                target_pos = demonstrate_data["l_arm"][loop_index].tolist() if disp_human_demonstrate_file_ish5 \
-                    else demonstrate_data["l_arm"][loop_index]
-                # WARNING: Negative Position Z
+                target_pos, target_ori = read_frame_demonstrate_data(
+                    demonstrate_data, loop_index, calculate_wrist_orientation_self, disp_human_demonstrate_file_ish5,
+                    given_fixed_orientation, fixed_orientation)
+                # WARNING: Negative Position Z in both position and orientation
                 for i in range(3):
                     target_pos[i][2] = -target_pos[i][2]
-                target_ori = [fixed_orientation] if given_fixed_orientation else demonstrate_data["ee_ori"][
-                    loop_index][0]
+                target_ori = [list(Rotation.from_matrix(
+                    Rotation.from_quat(target_ori[0]).as_matrix() @
+                    numpy.matrix(numpy.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]]))).as_quat(canonical=True))]
                 # Draw orientation coordinate
                 if draw_end_effector_coordinate:
-                    simulation.draw_end_effector_coordinate(target_ori)
+                    simulation.draw_end_effector_coordinate(target_ori[0])
                 # Step simulation
-                if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori):
+                if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori[0]):
                     loop_index = loop_index + 1
                     if loop_index >= len(list(demonstrate_data["l_arm"])):
                         break

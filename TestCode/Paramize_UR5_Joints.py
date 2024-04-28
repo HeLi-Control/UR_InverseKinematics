@@ -9,7 +9,7 @@ given_target_orientation = [[0, 0, 0, 1], [0, 0, 0, 1]]
 
 if __name__ == "__main__":
     simulation = ur5_robot_inverse_kinematics(
-        urdf_file="RobotDescription/ur_description/ur5_robot_hand.urdf", show_gui=True
+        urdf_file="../RobotDescription/ur_description/ur5_robot_hand.urdf", show_gui=True
     )
     start_angle = [
         0.0, 0.0, 0.0, -2.186088266204923, 1.0469676627563713, -0.6158551755776115,
