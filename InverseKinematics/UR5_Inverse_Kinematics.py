@@ -1,3 +1,4 @@
+import copy
 import math
 from typing import Any
 
@@ -27,11 +28,12 @@ calculate_wrist_orientation_self = True
 
 
 class ur5_robot_inverse_kinematics:
-    def __init__(self, urdf_file: str, ik_use_world_orientation=True, show_gui=False):
+    def __init__(self, urdf_file: str, ik_use_world_orientation=True, show_gui=False, default_scale=None):
         # Connect the client
         self.client = pybullet.connect(pybullet.GUI)
         self.ik_use_world_orientation = ik_use_world_orientation
         self.show_gui = show_gui
+        self.default_scale = [1.6, 1.5] if default_scale is None else default_scale
         if show_gui:
             pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 1)
             # Initialize debug parameters
@@ -40,8 +42,10 @@ class ur5_robot_inverse_kinematics:
             self.display_button_id_last_value = 1
             self.display_demonstrate_flag = True
             self.demonstrate_scale_id = [
-                pybullet.addUserDebugParameter(paramName="Scale1", rangeMin=0.1, rangeMax=10, startValue=1.6),
-                pybullet.addUserDebugParameter(paramName="Scale2", rangeMin=0.1, rangeMax=10, startValue=1.5)
+                pybullet.addUserDebugParameter(paramName="Scale1", rangeMin=0.1, rangeMax=10,
+                                               startValue=self.default_scale[0]),
+                pybullet.addUserDebugParameter(paramName="Scale2", rangeMin=0.1, rangeMax=10,
+                                               startValue=self.default_scale[1])
             ]
         else:
             pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
@@ -206,7 +210,7 @@ class ur5_robot_inverse_kinematics:
 
     @staticmethod
     def get_real_target(
-            arm_base_position: tuple, _target: list[list[float]], man_scale: list
+            arm_base_position: tuple, _target: list[list[float]], man_scale: list[float]
     ) -> list[list[float]]:
         if not man_scale:
             man_scale = [1.6, 1.5]
@@ -264,7 +268,7 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
                for x, y, z in zip(x_vector, y_vector, z_vector)]
     else:
         ori = fixed_ori if use_fixed_ori else data["ee_ori"][index]
-    return pos, ori
+    return copy.deepcopy(pos), copy.deepcopy(ori)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from Utils.pybullet_draw_display import set_display_lifetime, draw_coordinate
 import matplotlib.pyplot as plt
 
 disp_given_target_orientation = True
-given_target_orientation = [[0, 0, 0, 1]]
+given_target_orientation = [0.0, 0.0, 0.0, 1.0]
 show_set_angle_plot = False
 
 if __name__ == "__main__":
@@ -45,7 +45,6 @@ if __name__ == "__main__":
                     pybullet.readUserDebugParameter(param_id[1]) for param_id in joint_parameters
                 ]
                 now_angle = [[simulation.get_joint_angle_rad(i) for i in (4, 5, 6)]]
-                # logger.debug('current angle = ' + str(now_angle))
                 target_angle[3:] = simulation.end_effector_inverse_kinematics_last3dof(
                     given_target_orientation, now_angle=set_ang, random_select=True
                 )[0]

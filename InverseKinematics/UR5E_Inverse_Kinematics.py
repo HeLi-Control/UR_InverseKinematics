@@ -17,6 +17,7 @@ from Utils.math_utils import (
 from Utils.pybullet_draw_display import (
     set_display_lifetime,
     disp_human_demonstrate_arm,
+    draw_coordinate
 )
 
 global_z_offset = 1.0
@@ -27,8 +28,10 @@ calculate_wrist_orientation_self = True
 
 
 class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
-    def __init__(self, urdf_file: str, ik_use_world_orientation=True, show_gui=False):
-        super(ur5e_robot_inverse_kinematics, self).__init__(urdf_file, ik_use_world_orientation, show_gui)
+    def __init__(self, urdf_file: str, ik_use_world_orientation=True, show_gui=False, default_scale=None):
+        self.default_scale = [1.2, 1.7] if default_scale is None else default_scale
+        super(ur5e_robot_inverse_kinematics, self).__init__(urdf_file, ik_use_world_orientation, show_gui,
+                                                            self.default_scale)
         self.end_effector_joint_index = [6]
 
     # .available_joints_indices = [1, 2, 3, 4, 5, 6]
@@ -117,10 +120,10 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
     @staticmethod
     def get_real_target(
-            arm_base_position: list[float], _target: list[list[float]], man_scale: list
+            arm_base_position: list[float], _target: list[list[float]], man_scale: list[float]
     ) -> list[list[float]]:
         if not man_scale:
-            man_scale = [1.4, 1.9]
+            man_scale = [1.2, 1.7]
         target_points = cvt_target(_target, arm_base_position, _man_scale=man_scale)
         disp_human_demonstrate_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
         pybullet.addUserDebugPoints(
@@ -141,10 +144,9 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             pybullet.readUserDebugParameter(self.demonstrate_scale_id[1])
         ] if self.show_gui else []
         # Scale the input demonstrate
-        _target_pos = self.get_real_target(simulation.arm_base_position, _target_pos,
-                                           man_scale=interact_scale if self.show_gui else [])
+        _target_pos = self.get_real_target(simulation.arm_base_position, _target_pos, man_scale=interact_scale)
         # Inverse Kinematics
-        angles = simulation.calculate_inverse_kinematics(_target_pos, _target_ori)
+        angles = simulation.calculate_inverse_kinematics(_target_pos, _target_ori, use_elbow_pos=True)
         # Step simulation
         simulation.step_simulation(angles)
         return self.display_demonstrate_flag if self.show_gui else True
@@ -159,7 +161,7 @@ if __name__ == "__main__":
         else numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
     # Start simulation
     simulation = ur5e_robot_inverse_kinematics(urdf_file="../RobotDescription/ur5e/ur5e.urdf",
-                                               ik_use_world_orientation=True, show_gui=False)
+                                               ik_use_world_orientation=True, show_gui=False, default_scale=[1.2, 1.7])
     set_display_lifetime(0.01)
     # Simulation in loop
     try:
@@ -170,14 +172,19 @@ if __name__ == "__main__":
                 target_pos, target_ori = read_frame_demonstrate_data(
                     demonstrate_data, loop_index, calculate_wrist_orientation_self, disp_human_demonstrate_file_ish5,
                     given_fixed_orientation, fixed_orientation)
-                # WARNING: Negative Position Z in both position and orientation
+                target_pos = target_pos[:3]
+                target_ori = [target_ori[0]]
+                # WARNING: Negative Position Z in both position and orientation, flipped along the YZ plane meanwhile.
                 for i in range(3):
+                    target_pos[i][0] = -target_pos[i][0]
                     target_pos[i][2] = -target_pos[i][2]
                 target_ori = [list(Rotation.from_matrix(
-                    Rotation.from_quat(target_ori[0]).as_matrix() @
-                    numpy.matrix(numpy.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]]))).as_quat(canonical=True))]
-                # Draw orientation coordinate
+                    numpy.matrix(numpy.diag([-1, -1, 1])) @ Rotation.from_quat(target_ori[0]).as_matrix() @
+                    numpy.matrix(numpy.diag([-1, 1, -1]))).as_quat(canonical=True))]
                 if draw_end_effector_coordinate:
+                    # Draw base coordinate
+                    draw_coordinate([0, 0, 0], [0, 0, 0, 1])
+                    # Draw orientation coordinate
                     simulation.draw_end_effector_coordinate(target_ori[0])
                 # Step simulation
                 if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori[0]):
