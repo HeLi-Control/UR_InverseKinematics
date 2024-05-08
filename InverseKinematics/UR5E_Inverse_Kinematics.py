@@ -27,7 +27,7 @@ given_fixed_orientation = False
 fixed_orientation = [1.0, 0.0, 0.0, 0.0]
 draw_end_effector_coordinate = True
 calculate_wrist_orientation_self = True
-plot_angles = False
+plot_angles = True
 
 
 class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
@@ -106,7 +106,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         wrist_pos = target_position[0]
         elbow_pos = target_position[1]
         # Get first yaw angle
-        yaw_ang = math.atan2(wrist_pos[1], wrist_pos[0])
+        yaw_ang = math.atan2(wrist_pos[1], wrist_pos[0]) + math.pi
         # Get next two pitch angles
         r_target = numpy.linalg.norm(numpy.array(wrist_pos))
         link_length = [numpy.linalg.norm(numpy.array(elbow_pos)),
@@ -114,8 +114,8 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         cos_pitch1 = (r_target ** 2 + link_length[0] ** 2 - link_length[1] ** 2) / (2 * r_target * link_length[0])
         cos_pitch2 = (link_length[0] ** 2 + link_length[1] ** 2 - r_target ** 2) / (2 * link_length[0] * link_length[0])
         r_xy = (wrist_pos[0] ** 2 + wrist_pos[1] ** 2) ** 0.5
-        pitch1_ang = -(math.atan2(wrist_pos[2], r_xy) + safe_arccos(cos_pitch1))
-        pitch2_ang = safe_arccos(-cos_pitch2)
+        pitch1_ang = -(math.pi - (math.atan2(wrist_pos[2], r_xy) + safe_arccos(cos_pitch1)))
+        pitch2_ang = -safe_arccos(-cos_pitch2)
         return [yaw_ang, pitch1_ang, pitch2_ang, 0.0, 0.0, 0.0]
 
     def calculate_inverse_kinematics(
@@ -178,7 +178,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
 
 if __name__ == "__main__":
-    disp_human_demonstrate_file = '../DemonstrateData/demo1.pkl'
+    disp_human_demonstrate_file = '../DemonstrateData/demo3.pkl'
     # disp_human_demonstrate_file = '../DemonstrateData/humanDemonstrate.h5'
     disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
     # Load demonstrate data
@@ -208,7 +208,10 @@ if __name__ == "__main__":
                 # WARNING: Negative Position Z in both position and orientation, flipped along the YZ plane meanwhile.
                 for i in range(3):
                     target_pos[i][0] = -target_pos[i][0]
-                    target_pos[i][2] = -target_pos[i][2]
+                    target_pos[i][1] = -target_pos[i][1]
+                target_pos[2][0] += 0.1
+                target_pos[1][2] += 0.2
+                # target_pos[2][2] += 0.3
                 target_ori = [list(Rotation.from_matrix(
                     numpy.matrix(numpy.diag([-1, -1, 1])) @ Rotation.from_quat(target_ori[0]).as_matrix() @
                     numpy.matrix(numpy.diag([-1, 1, -1]))).as_quat(canonical=True))]
@@ -251,5 +254,6 @@ if __name__ == "__main__":
             plt.legend(['joint' + str(i + 1) for i in range(6)])
             plt.xlabel('Time(s)')
             plt.ylabel('AngularSpeed(rad/s)')
+            plt.ylim([-0.1, 0.1])
             plt.savefig('../Output/ctrlAngularSpeed.png')
             plt.show()
