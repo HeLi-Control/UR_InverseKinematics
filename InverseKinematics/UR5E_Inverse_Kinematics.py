@@ -6,6 +6,8 @@ from scipy.spatial.transform import Rotation
 import pybullet
 
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import time
 
 from InverseKinematics.UR5_Inverse_Kinematics import ur5_robot_inverse_kinematics, read_frame_demonstrate_data
 
@@ -25,6 +27,7 @@ given_fixed_orientation = False
 fixed_orientation = [1.0, 0.0, 0.0, 0.0]
 draw_end_effector_coordinate = True
 calculate_wrist_orientation_self = True
+plot_angles = False
 
 
 class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
@@ -94,21 +97,44 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         return [wrist_angles[index] for wrist_angles, index in zip(last3dof_ang, min_index)]
         # return [wrist_angles[0] for wrist_angles in last3dof_ang]
 
+    @staticmethod
+    def arm_calculate_inverse_kinematics(target_position: list[list[float]]) -> list[float]:
+        # WARNING: When the projection locates around the origin or the YZ plane, the result comes ill-posed.
+        def safe_arccos(x: float) -> float:
+            return 0.0 if x > 0.999 else (math.pi if x < -0.999 else math.acos(x))
+
+        wrist_pos = target_position[0]
+        elbow_pos = target_position[1]
+        # Get first yaw angle
+        yaw_ang = math.atan2(wrist_pos[1], wrist_pos[0])
+        # Get next two pitch angles
+        r_target = numpy.linalg.norm(numpy.array(wrist_pos))
+        link_length = [numpy.linalg.norm(numpy.array(elbow_pos)),
+                       numpy.linalg.norm(numpy.array(wrist_pos) - numpy.array(elbow_pos))]
+        cos_pitch1 = (r_target ** 2 + link_length[0] ** 2 - link_length[1] ** 2) / (2 * r_target * link_length[0])
+        cos_pitch2 = (link_length[0] ** 2 + link_length[1] ** 2 - r_target ** 2) / (2 * link_length[0] * link_length[0])
+        r_xy = (wrist_pos[0] ** 2 + wrist_pos[1] ** 2) ** 0.5
+        pitch1_ang = -(math.atan2(wrist_pos[2], r_xy) + safe_arccos(cos_pitch1))
+        pitch2_ang = safe_arccos(-cos_pitch2)
+        return [yaw_ang, pitch1_ang, pitch2_ang, 0.0, 0.0, 0.0]
+
     def calculate_inverse_kinematics(
             self,
             target_positions: list[list[float]],
             target_orientations: list[float],
-            use_elbow_pos=True
+            use_elbow_pos=True,
+            use_self_kinematics=True
     ) -> list[float]:
         now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
-        _angles = self.calculate_inverse_kinematics_without_orientation(
+        _angles = self.arm_calculate_inverse_kinematics(
+            target_position=[target_positions[target_joint] for target_joint in [2, 1]]) \
+            if use_self_kinematics else self.calculate_inverse_kinematics_without_orientation(
             target_joints_indices=[6, 3] if use_elbow_pos else [6],
             target_positions=[target_positions[target_joint] for target_joint in ([2, 1] if use_elbow_pos else [2])])
         # Wrist orientation inverse kinematics
-        ang = self.end_effector_inverse_kinematics_last3dof(
-            target_orientations, [now_ang[3:6]], random_select=False
-        )
+        ang = self.end_effector_inverse_kinematics_last3dof(target_orientations, now_angle=[now_ang[3:6]],
+                                                            random_select=False)
         _angles[3:6] = ang[0]
 
         return unwind_angle_list(
@@ -132,8 +158,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         )
         return target_points
 
-    def given_demonstrate_data_step_simulation(self, _target_pos: list[list[float]],
-                                               _target_ori: list[float]) -> bool:
+    def given_demonstrate_data_step_simulation(self, _target_pos: list[list[float]], _target_ori: list[float]) -> bool:
         # Read interact input
         if (self.show_gui and
                 (pybullet.readUserDebugParameter(self.display_button_id) != self.display_button_id_last_value)):
@@ -153,7 +178,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
 
 if __name__ == "__main__":
-    disp_human_demonstrate_file = '../DemonstrateData/demo.pkl'
+    disp_human_demonstrate_file = '../DemonstrateData/demo1.pkl'
     # disp_human_demonstrate_file = '../DemonstrateData/humanDemonstrate.h5'
     disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
     # Load demonstrate data
@@ -164,8 +189,14 @@ if __name__ == "__main__":
                                                ik_use_world_orientation=True, show_gui=False, default_scale=[1.2, 1.7])
     set_display_lifetime(0.01)
     # Simulation in loop
+    ctrl_angles = []
+    ctrl_time = []
+    ctrl_angular_speed = []
+    start_time = time.time()
     try:
-        with (tqdm(total=len(list(demonstrate_data["l_arm"])), unit='Frames') as pbar):
+        data_length = len(demonstrate_data) if isinstance(demonstrate_data, list) else len(
+            list(demonstrate_data["l_arm"]))
+        with (tqdm(total=data_length, unit='Frames') as pbar):
             loop_index = 0
             while True:
                 # Read demonstrate data
@@ -187,11 +218,38 @@ if __name__ == "__main__":
                     # Draw orientation coordinate
                     simulation.draw_end_effector_coordinate(target_ori[0])
                 # Step simulation
+                last_ang = numpy.array(simulation.ctrl_command) if simulation.ctrl_command is not None else [
+                    simulation.get_joint_angle_rad(joint_index) for joint_index in simulation.available_joints_indices]
                 if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori[0]):
+                    delta_time = time.time() - start_time
+                    # TODO: This is the real control command.
+                    angular_speed = ((numpy.array(simulation.ctrl_command) - last_ang) / delta_time).tolist()
+                    if plot_angles:
+                        ctrl_angles.append(simulation.ctrl_command)
+                        ctrl_time.append(delta_time)
+                        ctrl_angular_speed.append(angular_speed)
                     loop_index = loop_index + 1
-                    if loop_index >= len(list(demonstrate_data["l_arm"])):
+                    if loop_index >= data_length:
                         break
                 # Update tqdm bar
                 pbar.update()
-    except KeyboardInterrupt:
+    finally:
         pybullet.disconnect(simulation.client)
+        if disp_human_demonstrate_file_ish5:
+            demonstrate_data.close()
+        if plot_angles:
+            plt.figure(1)
+            plt.plot(ctrl_time, ctrl_angles)
+            plt.legend(['joint' + str(i + 1) for i in range(6)])
+            plt.xlabel('Time(s)')
+            plt.ylabel('Angle(rad)')
+            plt.savefig('../Output/ctrlAngles.png')
+            plt.show()
+
+            plt.figure(2)
+            plt.plot(ctrl_time[1:], ctrl_angular_speed[1:])
+            plt.legend(['joint' + str(i + 1) for i in range(6)])
+            plt.xlabel('Time(s)')
+            plt.ylabel('AngularSpeed(rad/s)')
+            plt.savefig('../Output/ctrlAngularSpeed.png')
+            plt.show()

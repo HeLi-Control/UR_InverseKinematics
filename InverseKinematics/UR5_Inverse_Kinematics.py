@@ -66,6 +66,8 @@ class ur5_robot_inverse_kinematics:
         self.all_joints_num = pybullet.getNumJoints(self.robot_id)
         self.end_effector_joint_index = [7, 16]
         self.available_joints_num = len(self.available_joints_indices)
+        # Latest control command
+        self.ctrl_command = None
 
     @property
     def available_joints_indices(self) -> list[int]:
@@ -88,6 +90,13 @@ class ur5_robot_inverse_kinematics:
     def ee_orientation_quaternion(self) -> list[list[float]]:
         return [list(self.get_link_orientation_quaternion(ee)) for ee in self.end_effector_joint_index]
 
+    @property
+    def get_link_length(self) -> list[float]:
+        base_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[0]))
+        elbow_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[1]))
+        wrist_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[2]))
+        return [numpy.linalg.norm(elbow_pos - base_pos), numpy.linalg.norm(wrist_pos - elbow_pos)]
+
     def get_joint_name(self, joint_index: int) -> str:
         return str(pybullet.getJointInfo(bodyUniqueId=self.robot_id, jointIndex=joint_index)[1])[2:-1]
 
@@ -109,6 +118,7 @@ class ur5_robot_inverse_kinematics:
                 bodyUniqueId=self.robot_id, jointIndices=self.available_joints_indices,
                 controlMode=pybullet.POSITION_CONTROL, targetPositions=joint_angles,
             )
+            self.ctrl_command = joint_angles
         pybullet.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING)
         pybullet.stepSimulation(self.client)
 
@@ -246,17 +256,26 @@ class ur5_robot_inverse_kinematics:
 def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
                                 demonstrate_ish5: bool, use_fixed_ori: bool, fixed_ori: Any) \
         -> tuple[list[list[float]], list[list[float]]]:
-    pos = data["l_arm"][index].tolist() + data["r_arm"][index].tolist() if demonstrate_ish5 \
-        else data["l_arm"][index][:3] + data["r_arm"][index][:3]
+    if isinstance(data, list):
+        pos = data[index]["l_arm"].tolist() + data[index]["r_arm"].tolist() if demonstrate_ish5 \
+            else data[index]["l_arm"][:3] + data[index]["r_arm"][:3]
+    else:
+        pos = data["l_arm"][index].tolist() + data["r_arm"][index].tolist() if demonstrate_ish5 \
+            else data["l_arm"][index][:3] + data["r_arm"][index][:3]
     if need_calculate_ori:
         # Get joint position
-        thumb_pos = [data["l_arm"][index][3]] + [data["r_arm"][index][3]]
-        middle_pos = [data["l_arm"][index][4]] + [data["r_arm"][index][4]]
-        wrist_pos = [pos[2]] + [pos[5]]
+        if isinstance(data, list):
+            thumb_pos = [data[index]["l_arm"][3]] + [data[index]["r_arm"][3]]
+            middle_pos = [data[index]["l_arm"][4]] + [data[index]["r_arm"][4]]
+            ring_pos = [data[index]["l_arm"][5]] + [data[index]["r_arm"][5]]
+        else:
+            thumb_pos = [data["l_arm"][index][3]] + [data["r_arm"][index][3]]
+            middle_pos = [data["l_arm"][index][4]] + [data["r_arm"][index][4]]
+            ring_pos = [data["l_arm"][index][5]] + [data["r_arm"][index][5]]
         # Calculate rotation matrix
-        x_vector = [numpy.array(middle_pos[i]) - numpy.array(wrist_pos[i]) for i in range(2)]
+        x_vector = [numpy.array(middle_pos[i]) - numpy.array(ring_pos[i]) for i in range(2)]
         x_vector = [vec / numpy.linalg.norm(vec) for vec in x_vector]
-        z_vector = [numpy.cross(x_vector[i], numpy.array(thumb_pos[i]) - numpy.array(wrist_pos[i]))
+        z_vector = [numpy.cross(x_vector[i], numpy.array(thumb_pos[i]) - numpy.array(ring_pos[i]))
                     for i in range(2)]
         z_vector = [vec / numpy.linalg.norm(vec) for vec in z_vector]
         y_vector = [numpy.cross(z_vector[i], x_vector[i]) for i in range(2)]
@@ -267,7 +286,10 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
             numpy.matrix(numpy.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]]))).as_quat(canonical=True)
                for x, y, z in zip(x_vector, y_vector, z_vector)]
     else:
-        ori = fixed_ori if use_fixed_ori else data["ee_ori"][index]
+        if isinstance(data, list):
+            ori = fixed_ori if use_fixed_ori else data[index]["ee_ori"]
+        else:
+            ori = fixed_ori if use_fixed_ori else data["ee_ori"][index]
     return copy.deepcopy(pos), copy.deepcopy(ori)
 
 
@@ -284,7 +306,9 @@ if __name__ == "__main__":
     set_display_lifetime(0.01)
     # Simulation in loop
     try:
-        with (tqdm(total=len(list(demonstrate_data["l_arm"])), unit='Frames') as pbar):
+        data_length = len(demonstrate_data) if isinstance(demonstrate_data, list) else len(
+            list(demonstrate_data["l_arm"]))
+        with (tqdm(total=data_length, unit='Frames') as pbar):
             loop_index = 0
             while True:
                 # Read demonstrate data
@@ -297,9 +321,10 @@ if __name__ == "__main__":
                 # Step simulation
                 if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori):
                     loop_index = loop_index + 1
-                    if loop_index >= len(list(demonstrate_data["l_arm"])):
+                    if loop_index >= data_length:
                         break
                 # Update tqdm bar
                 pbar.update()
     except KeyboardInterrupt:
         pybullet.disconnect(simulation.client)
+        demonstrate_data.close()
