@@ -7,15 +7,15 @@ from Utils.pybullet_draw_display import set_display_lifetime, draw_coordinate
 import matplotlib.pyplot as plt
 
 disp_given_target_orientation = True
-given_target_orientation = [0.0, 0.0, 0.0, 1.0]
+given_target_orientation = [0.7608037704286212, 0.6447105500396973, -0.031145675413048458, 0.06749723307047228]
 show_set_angle_plot = False
 
 if __name__ == "__main__":
     simulation = ur5e_robot_inverse_kinematics(
         urdf_file="../RobotDescription/ur5e/ur5e.urdf", show_gui=True
     )
-    start_angle = [-1.058220386505127, -0.7936654090881348, 1.3889145851135254, -2.546343557215553, 1.0582203778365116,
-                   -3.085593291984878e-08]
+    start_angle = [-3.0253081335636605, -1.7244084687247858, -1.7518796380705342, -0.39975185603720753,
+                   1.2944808839696385, -2.988723120697987]
     # Create interacting debug parameters
     joint_parameters = [
         [
@@ -83,5 +83,5 @@ if __name__ == "__main__":
                         origin_position=simulation.get_link_position_xyz(joint_parameters[index][2]),
                         orientation_quaternion=simulation.get_link_orientation_quaternion(joint_parameters[index][2]),
                     )
-    except KeyboardInterrupt:
+    finally:
         pybullet.disconnect(simulation.client)

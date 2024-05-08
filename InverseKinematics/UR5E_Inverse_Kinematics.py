@@ -43,7 +43,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
     @property
     def arm_base_position(self) -> list[float]:
-        return self.get_link_position_xyz(1)
+        return self.get_link_position_xyz(self.available_joints_indices[0])
 
     @property
     def ee_orientation_quaternion(self) -> list[float]:
@@ -133,8 +133,9 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             target_joints_indices=[6, 3] if use_elbow_pos else [6],
             target_positions=[target_positions[target_joint] for target_joint in ([2, 1] if use_elbow_pos else [2])])
         # Wrist orientation inverse kinematics
-        ang = self.end_effector_inverse_kinematics_last3dof(target_orientations, now_angle=[now_ang[3:6]],
-                                                            random_select=False)
+        ang = self.end_effector_inverse_kinematics_last3dof(
+            target_orientations, now_angle=[self.ctrl_command[3:]] if self.ctrl_command is not None else [[0] * 3],
+            random_select=False)
         _angles[3:6] = ang[0]
 
         return unwind_angle_list(
@@ -178,7 +179,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
 
 if __name__ == "__main__":
-    disp_human_demonstrate_file = '../DemonstrateData/demo3.pkl'
+    disp_human_demonstrate_file = '../DemonstrateData/demo4.pkl'
     # disp_human_demonstrate_file = '../DemonstrateData/humanDemonstrate.h5'
     disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
     # Load demonstrate data

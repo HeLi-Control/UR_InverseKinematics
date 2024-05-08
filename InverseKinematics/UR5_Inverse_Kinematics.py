@@ -258,24 +258,29 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
         -> tuple[list[list[float]], list[list[float]]]:
     if isinstance(data, list):
         pos = data[index]["l_arm"].tolist() + data[index]["r_arm"].tolist() if demonstrate_ish5 \
-            else data[index]["l_arm"][:3] + data[index]["r_arm"][:3]
+            else (data[index][0]["l_arm"][:3] + data[index][0]["r_arm"][:3] if isinstance(data[index], list) else
+                  data[index]["l_arm"][:3] + data[index]["r_arm"][:3])
     else:
         pos = data["l_arm"][index].tolist() + data["r_arm"][index].tolist() if demonstrate_ish5 \
-            else data["l_arm"][index][:3] + data["r_arm"][index][:3]
+            else (data["l_arm"][index][:3] + data["r_arm"][index][:3])
     if need_calculate_ori:
         # Get joint position
         if isinstance(data, list):
-            thumb_pos = [data[index]["l_arm"][3]] + [data[index]["r_arm"][3]]
-            middle_pos = [data[index]["l_arm"][4]] + [data[index]["r_arm"][4]]
-            ring_pos = [data[index]["l_arm"][5]] + [data[index]["r_arm"][5]]
+            index_finger_pos = [data[index][0]["l_arm"][3]] + [data[index][0]["r_arm"][3]] \
+                if isinstance(data[index], list) else [data[index]["l_arm"][3]] + [data[index]["r_arm"][3]]
+            middle_pos = [data[index][0]["l_arm"][4]] + [data[index][0]["r_arm"][4]] \
+                if isinstance(data[index], list) else [data[index]["l_arm"][4]] + [data[index]["r_arm"][4]]
+            ring_finger_pos = [data[index][0]["l_arm"][5]] + [data[index][0]["r_arm"][5]] \
+                if isinstance(data[index], list) else [data[index]["l_arm"][5]] + [data[index]["r_arm"][5]]
         else:
-            thumb_pos = [data["l_arm"][index][3]] + [data["r_arm"][index][3]]
+            index_finger_pos = [data["l_arm"][index][3]] + [data["r_arm"][index][3]]
             middle_pos = [data["l_arm"][index][4]] + [data["r_arm"][index][4]]
-            ring_pos = [data["l_arm"][index][5]] + [data["r_arm"][index][5]]
+            ring_finger_pos = [data["l_arm"][index][5]] + [data["r_arm"][index][5]]
         # Calculate rotation matrix
-        x_vector = [numpy.array(middle_pos[i]) - numpy.array(ring_pos[i]) for i in range(2)]
+        x_vector = [2 * numpy.array(middle_pos[i]) - (numpy.array(index_finger_pos[i]) + numpy.array(ring_finger_pos[i]))
+                    for i in range(2)]
         x_vector = [vec / numpy.linalg.norm(vec) for vec in x_vector]
-        z_vector = [numpy.cross(x_vector[i], numpy.array(thumb_pos[i]) - numpy.array(ring_pos[i]))
+        z_vector = [numpy.cross(x_vector[i], numpy.array(index_finger_pos[i]) - numpy.array(ring_finger_pos[i]))
                     for i in range(2)]
         z_vector = [vec / numpy.linalg.norm(vec) for vec in z_vector]
         y_vector = [numpy.cross(z_vector[i], x_vector[i]) for i in range(2)]
@@ -287,7 +292,8 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
                for x, y, z in zip(x_vector, y_vector, z_vector)]
     else:
         if isinstance(data, list):
-            ori = fixed_ori if use_fixed_ori else data[index]["ee_ori"]
+            ori = fixed_ori if use_fixed_ori else (
+                data[index][0]["ee_ori"] if isinstance(data[index], list) else data[index]["ee_ori"])
         else:
             ori = fixed_ori if use_fixed_ori else data["ee_ori"][index]
     return copy.deepcopy(pos), copy.deepcopy(ori)
