@@ -1,6 +1,6 @@
 import math
 
-import numpy
+import numpy as np
 import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
@@ -11,16 +11,8 @@ import time
 
 from InverseKinematics.UR5_Inverse_Kinematics import ur5_robot_inverse_kinematics, read_frame_demonstrate_data
 
-from Utils.math_utils import (
-    get_yzy_euler_angles_from_rotation_matrix,
-    unwind_angle_list,
-    cvt_target,
-)
-from Utils.pybullet_draw_display import (
-    set_display_lifetime,
-    disp_human_demonstrate_arm,
-    draw_coordinate
-)
+from Utils.math_utils import get_yzy_euler_angles_from_rotation_matrix, unwind_angle_list, cvt_target
+from Utils.pybullet_draw_display import set_display_lifetime, disp_human_demonstrate_arm, draw_coordinate
 
 global_z_offset = 1.0
 given_fixed_orientation = False
@@ -59,12 +51,10 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             now_angle: list[list[float]],
             random_select=False
     ) -> list[list[float]]:
-        def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
-            return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
+        def quaternion_2_numpy_matrix(quaternion: list[float]) -> np.matrix:
+            return np.matrix(np.array(Rotation.from_quat(quaternion).as_matrix()))
 
-        def unwind_euler_angle_lists(
-                center_angle: list[float], target_angles: list[list[float]]
-        ) -> list[list[float]]:
+        def unwind_euler_angle_lists(center_angle: list[float], target_angles: list[list[float]]) -> list[list[float]]:
             return [
                 unwind_angle_list([0] * len(center_angle), unwind_angle_list(center_angle, target_angle),
                                   period=math.pi * 4, step_size=math.pi * 2)
@@ -73,9 +63,9 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
         if self.ik_use_world_orientation:
             def get_wrist_last3dof(
-                    ee_ori: numpy.matrix,
-                    base: numpy.matrix,
-                    base_transform=numpy.matrix(numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
+                    ee_ori: np.matrix,
+                    base: np.matrix,
+                    base_transform=np.matrix(np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
             ) -> list[list[float]]:
                 rotation_matrix = ee_ori.transpose() @ base @ base_transform
                 return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
@@ -88,16 +78,16 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         else:
             last3dof_ang = [unwind_euler_angle_lists(
                 now_angle[0], get_yzy_euler_angles_from_rotation_matrix(
-                    quaternion_2_numpy_matrix(target_orientations) @ numpy.matrix(
-                        numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]))))]
+                    quaternion_2_numpy_matrix(target_orientations) @ np.matrix(
+                        np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]))))]
         last3dof_ang = last3dof_ang[0:1]
         # Select the proper result
         if random_select:
             return last3dof_ang[0]
-        angle_error = numpy.sum(
-            numpy.abs(numpy.array(last3dof_ang) - numpy.array([[ang] for ang in now_angle])), axis=2,
+        angle_error = np.sum(
+            np.abs(np.array(last3dof_ang) - np.array([[ang] for ang in now_angle])), axis=2,
         )
-        min_index = numpy.argmin(angle_error, axis=1).tolist()
+        min_index = np.argmin(angle_error, axis=1).tolist()
         return [wrist_angles[index] for wrist_angles, index in zip(last3dof_ang, min_index)]
         # return [wrist_angles[0] for wrist_angles in last3dof_ang]
 
@@ -107,14 +97,14 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         def safe_arccos(x: float) -> float:
             return 0.0 if x > 0.999 else (math.pi if x < -0.999 else math.acos(x))
 
-        wrist_pos = target_position[0]
-        elbow_pos = target_position[1]
+        wrist_pos = (np.array(target_position[0]) - np.array(target_position[2])).tolist()
+        elbow_pos = (np.array(target_position[1]) - np.array(target_position[2])).tolist()
         # Get first yaw angle
         yaw_ang = math.atan2(wrist_pos[1], wrist_pos[0]) + math.pi
         # Get next two pitch angles
-        r_target = numpy.linalg.norm(numpy.array(wrist_pos))
-        link_length = [numpy.linalg.norm(numpy.array(elbow_pos)),
-                       numpy.linalg.norm(numpy.array(wrist_pos) - numpy.array(elbow_pos))]
+        r_target = np.linalg.norm(np.array(wrist_pos))
+        link_length = [np.linalg.norm(np.array(elbow_pos)),
+                       np.linalg.norm(np.array(wrist_pos) - np.array(elbow_pos))]
         cos_pitch1 = (r_target ** 2 + link_length[0] ** 2 - link_length[1] ** 2) / (2 * r_target * link_length[0])
         cos_pitch2 = (link_length[0] ** 2 + link_length[1] ** 2 - r_target ** 2) / (2 * link_length[0] * link_length[0])
         r_xy = (wrist_pos[0] ** 2 + wrist_pos[1] ** 2) ** 0.5
@@ -132,7 +122,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         arm_now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
         _angles = self.arm_calculate_inverse_kinematics(
-            target_position=[target_positions[target_joint] for target_joint in [2, 1]]) \
+            target_position=[target_positions[target_joint] for target_joint in [2, 1, 0]]) \
             if use_self_kinematics else self.calculate_inverse_kinematics_without_orientation(
             target_joints_indices=[6, 3] if use_elbow_pos else [6],
             target_positions=[target_positions[target_joint] for target_joint in ([2, 1] if use_elbow_pos else [2])])
@@ -149,12 +139,11 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
     def draw_end_effector_coordinate(self, target_orientation: list[float]) -> None:
         self.draw_single_joint_coordinate(self.end_effector_joint_index[0], target_orientation)
 
-    @staticmethod
     def get_real_target(
-            arm_base_position: list[float], _target: list[list[float]], man_scale: list[float]
+            self, arm_base_position: list[float], _target: list[list[float]], man_scale: list[float]
     ) -> list[list[float]]:
         if not man_scale:
-            man_scale = [1.2, 1.7]
+            man_scale = self.default_scale
         target_points = cvt_target(_target, arm_base_position, _man_scale=man_scale)
         disp_human_demonstrate_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
         pybullet.addUserDebugPoints(
@@ -184,35 +173,36 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
 
 def estimate_speed_given_positions(position: list[float], time_stamp: list[float]) -> float:
     if len(position) != len(time_stamp):
-        raise ValueError(
-            f'The data length of position is {len(position)} while which of time_stamp is {len(time_stamp)}')
+        raise ValueError(f'The data length of variable \'position\' is {len(position)}'
+                         f'while which of \'time_stamp\' is {len(time_stamp)}')
     if (len(position) < 20) or not calculate_reference_speed:
         return 0
     else:
-        position_new = position[-10:]
-        time_stamp_new = time_stamp[-10:]
-        weight = numpy.array([(w + 1) ** 2 for w in range(len(position_new))])
+        position_new = position[-18:]
+        time_stamp_new = time_stamp[-18:]
+        weight = np.array([(w + 1) ** 1.2 for w in range(len(position_new))])
         weight = (weight / weight.sum()).tolist()
         fitted = sm.WLS(sm.add_constant(position_new), time_stamp_new, weights=weight).fit()
         return fitted.params.tolist()[0][1]
 
 
 if __name__ == "__main__":
-    disp_human_demonstrate_file = '../DemonstrateData/demo4.pkl'
+    disp_human_demonstrate_file = '../DemonstrateData/demo3.pkl'
     # disp_human_demonstrate_file = '../DemonstrateData/humanDemonstrate.h5'
     disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
     # Load demonstrate data
     demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r") if disp_human_demonstrate_file_ish5 \
-        else numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
+        else np.load(file=disp_human_demonstrate_file, allow_pickle=True)
     # Start simulation
     simulation = ur5e_robot_inverse_kinematics(urdf_file="../RobotDescription/ur5e/ur5e.urdf",
-                                               ik_use_world_orientation=True, show_gui=False, default_scale=[1.2, 1.7])
+                                               ik_use_world_orientation=True, show_gui=False, default_scale=[1.6, 1.7])
     set_display_lifetime(0.01)
     # Simulation in loop
     ctrl_angles = []
     ctrl_time = []
     ctrl_angular_speed = []
     start_time = time.time()
+    target_angular_speed = [0.0] * 6
     try:
         data_length = len(demonstrate_data) if isinstance(demonstrate_data, list) else len(
             list(demonstrate_data["l_arm"]))
@@ -233,8 +223,8 @@ if __name__ == "__main__":
                 target_pos[1][2] += 0.2
                 # target_pos[2][2] += 0.3
                 target_ori = [list(Rotation.from_matrix(
-                    numpy.matrix(numpy.diag([-1, -1, 1])) @ Rotation.from_quat(target_ori[0]).as_matrix() @
-                    numpy.matrix(numpy.diag([-1, 1, -1]))).as_quat(canonical=True))]
+                    np.matrix(np.diag([-1, -1, 1])) @ Rotation.from_quat(target_ori[0]).as_matrix() @
+                    np.matrix(np.diag([-1, 1, -1]))).as_quat(canonical=True))]
                 if draw_end_effector_coordinate:
                     # Draw base coordinate
                     draw_coordinate([0, 0, 0], [0, 0, 0, 1])
@@ -248,13 +238,13 @@ if __name__ == "__main__":
                     ctrl_time.append(delta_time)
                     # TODO: This is the real control command.
                     target_angular_speed = [
-                        estimate_speed_given_positions(numpy.array(ctrl_angles).T.tolist()[joint][-20:],
+                        estimate_speed_given_positions(np.array(ctrl_angles).T.tolist()[joint][-20:],
                                                        ctrl_time[-20:]) for joint
                         in range(simulation.available_joints_num)]
                     now_ang = [simulation.get_joint_angle_rad(joint_index) for joint_index in
                                simulation.available_joints_indices]
-                    angular_speed_cmd = (numpy.array(target_angular_speed) + 0.5 * (
-                            numpy.array(simulation.ctrl_command) - numpy.array(now_ang))).tolist()
+                    angular_speed_cmd = (np.array(target_angular_speed) + 0.5 * (
+                            np.array(simulation.ctrl_command) - np.array(now_ang))).tolist()
                     ctrl_angular_speed.append(angular_speed_cmd)
                     if len(ctrl_angular_speed) > 1500:
                         ctrl_angles = ctrl_angles[-1500:]
@@ -262,6 +252,23 @@ if __name__ == "__main__":
                         ctrl_angular_speed = ctrl_angular_speed[-1500:]
                     loop_index = loop_index + 1
                     if loop_index >= data_length:
+                        # Draw plot angle and angular control command data
+                        if plot_angles:
+                            plt.figure(1)
+                            plt.plot(ctrl_time, ctrl_angles)
+                            plt.legend(['joint' + str(i + 1) for i in range(6)])
+                            plt.xlabel('Time(s)')
+                            plt.ylabel('Angle(rad)')
+                            plt.savefig('../Output/ctrlAngles.png')
+                            plt.show()
+
+                            plt.figure(2)
+                            plt.plot(ctrl_time, ctrl_angular_speed)
+                            plt.legend(['joint' + str(i + 1) for i in range(6)])
+                            plt.xlabel('Time(s)')
+                            plt.ylabel('AngularSpeed(rad/s)')
+                            plt.savefig('../Output/ctrlAngularSpeed.png')
+                            plt.show()
                         break
                 # Update tqdm bar
                 pbar.update()
@@ -269,19 +276,3 @@ if __name__ == "__main__":
         pybullet.disconnect(simulation.client)
         if disp_human_demonstrate_file_ish5:
             demonstrate_data.close()
-        if plot_angles:
-            plt.figure(1)
-            plt.plot(ctrl_time, ctrl_angles)
-            plt.legend(['joint' + str(i + 1) for i in range(6)])
-            plt.xlabel('Time(s)')
-            plt.ylabel('Angle(rad)')
-            plt.savefig('../Output/ctrlAngles.png')
-            plt.show()
-
-            plt.figure(2)
-            plt.plot(ctrl_time, ctrl_angular_speed)
-            plt.legend(['joint' + str(i + 1) for i in range(6)])
-            plt.xlabel('Time(s)')
-            plt.ylabel('AngularSpeed(rad/s)')
-            plt.savefig('../Output/ctrlAngularSpeed.png')
-            plt.show()

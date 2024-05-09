@@ -2,23 +2,15 @@ import copy
 import math
 from typing import Any
 
-import numpy
+import numpy as np
 import h5py
 from scipy.spatial.transform import Rotation
 import pybullet
 
 from tqdm import tqdm
 
-from Utils.math_utils import (
-    get_yzy_euler_angles_from_rotation_matrix,
-    unwind_angle_list,
-    cvt_target_bimanual,
-)
-from Utils.pybullet_draw_display import (
-    set_display_lifetime,
-    disp_human_demonstrate_bimanual_arm,
-    draw_coordinate,
-)
+from Utils.math_utils import get_yzy_euler_angles_from_rotation_matrix, unwind_angle_list, cvt_target_bimanual
+from Utils.pybullet_draw_display import set_display_lifetime, disp_human_demonstrate_bimanual_arm, draw_coordinate
 
 global_z_offset = 1.0
 given_fixed_orientation = False
@@ -59,8 +51,7 @@ class ur5_robot_inverse_kinematics:
         self.robot_id = pybullet.loadURDF(fileName=urdf_file, basePosition=[0, 0, global_z_offset], useFixedBase=True)
         # Set camera
         pybullet.resetDebugVisualizerCamera(
-            cameraDistance=1.8, cameraYaw=95, cameraPitch=-20,
-            cameraTargetPosition=[0, 0, 0.5 + global_z_offset],
+            cameraDistance=1.8, cameraYaw=95, cameraPitch=-20, cameraTargetPosition=[0, 0, 0.5 + global_z_offset],
         )
         # Get joints available
         self.all_joints_num = pybullet.getNumJoints(self.robot_id)
@@ -92,10 +83,10 @@ class ur5_robot_inverse_kinematics:
 
     @property
     def get_link_length(self) -> list[float]:
-        base_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[0]))
-        elbow_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[1]))
-        wrist_pos = numpy.array(self.get_link_position_xyz(self.available_joints_indices[2]))
-        return [numpy.linalg.norm(elbow_pos - base_pos), numpy.linalg.norm(wrist_pos - elbow_pos)]
+        base_pos = np.array(self.get_link_position_xyz(self.available_joints_indices[0]))
+        elbow_pos = np.array(self.get_link_position_xyz(self.available_joints_indices[1]))
+        wrist_pos = np.array(self.get_link_position_xyz(self.available_joints_indices[2]))
+        return [np.linalg.norm(elbow_pos - base_pos), np.linalg.norm(wrist_pos - elbow_pos)]
 
     def get_joint_name(self, joint_index: int) -> str:
         return str(pybullet.getJointInfo(bodyUniqueId=self.robot_id, jointIndex=joint_index)[1])[2:-1]
@@ -138,12 +129,10 @@ class ur5_robot_inverse_kinematics:
             now_angle: list[list[float]],
             random_select=False
     ) -> list[list[float]]:
-        def quaternion_2_numpy_matrix(quaternion: list[float]) -> numpy.matrix:
-            return numpy.matrix(numpy.array(Rotation.from_quat(quaternion).as_matrix()))
+        def quaternion_2_numpy_matrix(quaternion: list[float]) -> np.matrix:
+            return np.matrix(np.array(Rotation.from_quat(quaternion).as_matrix()))
 
-        def unwind_euler_angle_lists(
-                center_angle: list[float], target_angles: list[list[float]]
-        ) -> list[list[float]]:
+        def unwind_euler_angle_lists(center_angle: list[float], target_angles: list[list[float]]) -> list[list[float]]:
             return [
                 unwind_angle_list(
                     [0] * len(center_angle), unwind_angle_list(center_angle, target_angle),
@@ -153,11 +142,9 @@ class ur5_robot_inverse_kinematics:
 
         if self.ik_use_world_orientation:
             def get_wrist_last3dof(
-                    ee_ori: numpy.matrix,
-                    base: numpy.matrix,
-                    base_transform=numpy.matrix(
-                        numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
-                    ),
+                    ee_ori: np.matrix,
+                    base: np.matrix,
+                    base_transform=np.matrix(np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])),
             ) -> list[list[float]]:
                 rotation_matrix = ee_ori.transpose() @ base @ base_transform
                 return get_yzy_euler_angles_from_rotation_matrix(rotation_matrix)
@@ -173,16 +160,16 @@ class ur5_robot_inverse_kinematics:
         else:
             last3dof_ang = [unwind_euler_angle_lists(
                 now_angle[0], get_yzy_euler_angles_from_rotation_matrix(
-                    quaternion_2_numpy_matrix(target_orientation) @ numpy.matrix(
-                        numpy.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])))) for target_orientation in
+                    quaternion_2_numpy_matrix(target_orientation) @ np.matrix(
+                        np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])))) for target_orientation in
                 target_orientations]
         # Select the proper result
         if random_select:
             return [last3dof_ang[0][0], last3dof_ang[1][0]]
-        angle_error = numpy.sum(
-            numpy.abs(numpy.array(last3dof_ang) - numpy.array([[ang] for ang in now_angle])), axis=2,
+        angle_error = np.sum(
+            np.abs(np.array(last3dof_ang) - np.array([[ang] for ang in now_angle])), axis=2,
         )
-        min_index = numpy.argmin(angle_error, axis=1).tolist()
+        min_index = np.argmin(angle_error, axis=1).tolist()
         return [wrist_angles[index] for wrist_angles, index in zip(last3dof_ang, min_index)]
         # return [wrist_angles[0] for wrist_angles in last3dof_ang]
 
@@ -218,12 +205,11 @@ class ur5_robot_inverse_kinematics:
         for ee_index, expected_ori in zip(self.end_effector_joint_index, target_orientations):
             self.draw_single_joint_coordinate(ee_index, expected_ori)
 
-    @staticmethod
     def get_real_target(
-            arm_base_position: tuple, _target: list[list[float]], man_scale: list[float]
+            self, arm_base_position: tuple, _target: list[list[float]], man_scale: list[float]
     ) -> list[list[float]]:
         if not man_scale:
-            man_scale = [1.6, 1.5]
+            man_scale = self.default_scale
             # man_scale = [2.5, 2.5]
         target_points = cvt_target_bimanual(_target, *arm_base_position, _man_scale=man_scale)
         disp_human_demonstrate_bimanual_arm(target_points, draw_bias=[0, -0.6, global_z_offset])
@@ -277,18 +263,19 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
             middle_pos = [data["l_arm"][index][4]] + [data["r_arm"][index][4]]
             ring_finger_pos = [data["l_arm"][index][5]] + [data["r_arm"][index][5]]
         # Calculate rotation matrix
-        x_vector = [2 * numpy.array(middle_pos[i]) - (numpy.array(index_finger_pos[i]) + numpy.array(ring_finger_pos[i]))
+        x_vector = [
+            2 * np.array(middle_pos[i]) - (np.array(index_finger_pos[i]) + np.array(ring_finger_pos[i]))
+            for i in range(2)]
+        x_vector = [-vec / np.linalg.norm(vec) for vec in x_vector]
+        z_vector = [np.cross(x_vector[i], np.array(index_finger_pos[i]) - np.array(ring_finger_pos[i]))
                     for i in range(2)]
-        x_vector = [-vec / numpy.linalg.norm(vec) for vec in x_vector]
-        z_vector = [numpy.cross(x_vector[i], numpy.array(index_finger_pos[i]) - numpy.array(ring_finger_pos[i]))
-                    for i in range(2)]
-        z_vector = [-vec / numpy.linalg.norm(vec) for vec in z_vector]
-        y_vector = [numpy.cross(z_vector[i], x_vector[i]) for i in range(2)]
-        y_vector = [vec / numpy.linalg.norm(vec) for vec in y_vector]
+        z_vector = [-vec / np.linalg.norm(vec) for vec in z_vector]
+        y_vector = [np.cross(z_vector[i], x_vector[i]) for i in range(2)]
+        y_vector = [vec / np.linalg.norm(vec) for vec in y_vector]
         # Get quaternion
         ori = [Rotation.from_matrix(
-            numpy.matrix(numpy.vstack([x, y, z])).T @
-            numpy.matrix(numpy.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]]))).as_quat(canonical=True)
+            np.matrix(np.vstack([x, y, z])).T @
+            np.matrix(np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]]))).as_quat(canonical=True)
                for x, y, z in zip(x_vector, y_vector, z_vector)]
     else:
         if isinstance(data, list):
@@ -305,7 +292,7 @@ if __name__ == "__main__":
     disp_human_demonstrate_file_ish5 = disp_human_demonstrate_file.endswith('h5')
     # Load demonstrate data
     demonstrate_data = h5py.File(name=disp_human_demonstrate_file, mode="r") if disp_human_demonstrate_file_ish5 \
-        else numpy.load(file=disp_human_demonstrate_file, allow_pickle=True)
+        else np.load(file=disp_human_demonstrate_file, allow_pickle=True)
     # Start simulation
     simulation = ur5_robot_inverse_kinematics(urdf_file="../RobotDescription/ur_description/ur5_robot_hand.urdf",
                                               ik_use_world_orientation=True, show_gui=False)
