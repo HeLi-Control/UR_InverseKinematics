@@ -28,6 +28,10 @@ fixed_orientation = [1.0, 0.0, 0.0, 0.0]
 draw_end_effector_coordinate = True
 calculate_wrist_orientation_self = True
 plot_angles = True
+calculate_reference_speed = True
+
+if calculate_reference_speed:
+    import statsmodels.api as sm
 
 
 class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
@@ -125,7 +129,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
             use_elbow_pos=True,
             use_self_kinematics=True
     ) -> list[float]:
-        now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
+        arm_now_ang = [self.get_joint_angle_rad(index) for index in self.available_joints_indices]
         # Arm inverse kinematics
         _angles = self.arm_calculate_inverse_kinematics(
             target_position=[target_positions[target_joint] for target_joint in [2, 1]]) \
@@ -139,7 +143,7 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         _angles[3:6] = ang[0]
 
         return unwind_angle_list(
-            [0] * len(_angles), unwind_angle_list(now_ang, _angles), period=4 * math.pi, step_size=2 * math.pi,
+            [0] * len(_angles), unwind_angle_list(arm_now_ang, _angles), period=4 * math.pi, step_size=2 * math.pi,
         )
 
     def draw_end_effector_coordinate(self, target_orientation: list[float]) -> None:
@@ -178,6 +182,21 @@ class ur5e_robot_inverse_kinematics(ur5_robot_inverse_kinematics):
         return self.display_demonstrate_flag if self.show_gui else True
 
 
+def estimate_speed_given_positions(position: list[float], time_stamp: list[float]) -> float:
+    if len(position) != len(time_stamp):
+        raise ValueError(
+            f'The data length of position is {len(position)} while which of time_stamp is {len(time_stamp)}')
+    if (len(position) < 20) or not calculate_reference_speed:
+        return 0
+    else:
+        position_new = position[-10:]
+        time_stamp_new = time_stamp[-10:]
+        weight = numpy.array([(w + 1) ** 2 for w in range(len(position_new))])
+        weight = (weight / weight.sum()).tolist()
+        fitted = sm.WLS(sm.add_constant(position_new), time_stamp_new, weights=weight).fit()
+        return fitted.params.tolist()[0][1]
+
+
 if __name__ == "__main__":
     disp_human_demonstrate_file = '../DemonstrateData/demo4.pkl'
     # disp_human_demonstrate_file = '../DemonstrateData/humanDemonstrate.h5'
@@ -207,9 +226,9 @@ if __name__ == "__main__":
                 target_pos = target_pos[:3]
                 target_ori = [target_ori[0]]
                 # WARNING: Negative Position Z in both position and orientation, flipped along the YZ plane meanwhile.
-                for i in range(3):
-                    target_pos[i][0] = -target_pos[i][0]
-                    target_pos[i][1] = -target_pos[i][1]
+                # for i in range(3):
+                #     target_pos[i][0] = -target_pos[i][0]
+                #     target_pos[i][1] = -target_pos[i][1]
                 target_pos[2][0] += 0.1
                 target_pos[1][2] += 0.2
                 # target_pos[2][2] += 0.3
@@ -222,16 +241,25 @@ if __name__ == "__main__":
                     # Draw orientation coordinate
                     simulation.draw_end_effector_coordinate(target_ori[0])
                 # Step simulation
-                last_ang = numpy.array(simulation.ctrl_command) if simulation.ctrl_command is not None else [
-                    simulation.get_joint_angle_rad(joint_index) for joint_index in simulation.available_joints_indices]
                 if simulation.given_demonstrate_data_step_simulation(target_pos, target_ori[0]):
+                    # Record control command data
                     delta_time = time.time() - start_time
+                    ctrl_angles.append(simulation.ctrl_command)
+                    ctrl_time.append(delta_time)
                     # TODO: This is the real control command.
-                    angular_speed = ((numpy.array(simulation.ctrl_command) - last_ang) / delta_time).tolist()
-                    if plot_angles:
-                        ctrl_angles.append(simulation.ctrl_command)
-                        ctrl_time.append(delta_time)
-                        ctrl_angular_speed.append(angular_speed)
+                    target_angular_speed = [
+                        estimate_speed_given_positions(numpy.array(ctrl_angles).T.tolist()[joint][-20:],
+                                                       ctrl_time[-20:]) for joint
+                        in range(simulation.available_joints_num)]
+                    now_ang = [simulation.get_joint_angle_rad(joint_index) for joint_index in
+                               simulation.available_joints_indices]
+                    angular_speed_cmd = (numpy.array(target_angular_speed) + 0.5 * (
+                            numpy.array(simulation.ctrl_command) - numpy.array(now_ang))).tolist()
+                    ctrl_angular_speed.append(angular_speed_cmd)
+                    if len(ctrl_angular_speed) > 1500:
+                        ctrl_angles = ctrl_angles[-1500:]
+                        ctrl_time = ctrl_time[-1500:]
+                        ctrl_angular_speed = ctrl_angular_speed[-1500:]
                     loop_index = loop_index + 1
                     if loop_index >= data_length:
                         break
@@ -251,10 +279,9 @@ if __name__ == "__main__":
             plt.show()
 
             plt.figure(2)
-            plt.plot(ctrl_time[1:], ctrl_angular_speed[1:])
+            plt.plot(ctrl_time, ctrl_angular_speed)
             plt.legend(['joint' + str(i + 1) for i in range(6)])
             plt.xlabel('Time(s)')
             plt.ylabel('AngularSpeed(rad/s)')
-            plt.ylim([-0.1, 0.1])
             plt.savefig('../Output/ctrlAngularSpeed.png')
             plt.show()

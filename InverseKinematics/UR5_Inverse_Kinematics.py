@@ -279,10 +279,10 @@ def read_frame_demonstrate_data(data: Any, index: int, need_calculate_ori: bool,
         # Calculate rotation matrix
         x_vector = [2 * numpy.array(middle_pos[i]) - (numpy.array(index_finger_pos[i]) + numpy.array(ring_finger_pos[i]))
                     for i in range(2)]
-        x_vector = [vec / numpy.linalg.norm(vec) for vec in x_vector]
+        x_vector = [-vec / numpy.linalg.norm(vec) for vec in x_vector]
         z_vector = [numpy.cross(x_vector[i], numpy.array(index_finger_pos[i]) - numpy.array(ring_finger_pos[i]))
                     for i in range(2)]
-        z_vector = [vec / numpy.linalg.norm(vec) for vec in z_vector]
+        z_vector = [-vec / numpy.linalg.norm(vec) for vec in z_vector]
         y_vector = [numpy.cross(z_vector[i], x_vector[i]) for i in range(2)]
         y_vector = [vec / numpy.linalg.norm(vec) for vec in y_vector]
         # Get quaternion
